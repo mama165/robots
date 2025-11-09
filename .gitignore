@@ -1,0 +1,16 @@
+# --- Go build ---
+bin/
+build/
+*.exe
+*.out
+*.test
+*.log
+go.sum
+.idea/
+*.iml
+.vscode/
+
+.DS_Store
+Thumbs.db
+
+secret.txt
