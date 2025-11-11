@@ -28,13 +28,24 @@ type Inbox struct {
 	Words []string
 }
 
+type ISecretManager interface {
+	SplitSecret(word string) []string
+	CreateRobots(words []string, nbrOfRobots, bufferSize int) []*Robot
+	ExchangeMessage(robots []*Robot, percentageOfLost, percentageOfDuplicated,
+		duplicatedNumber, maxAttempts int) int
+}
+
+type SecretManager struct {
+	Config Config
+}
+
 // SplitSecret Initial sentences split into words
-func SplitSecret(word string) []string {
+func (s SecretManager) SplitSecret(word string) []string {
 	return strings.Fields(word)
 }
 
 // CreateRobots Randomly assign words to n robots
-func CreateRobots(words []string, nbrOfRobots, bufferSize int) []*Robot {
+func (s SecretManager) CreateRobots(words []string, nbrOfRobots, bufferSize int) []*Robot {
 	robots := make([]*Robot, nbrOfRobots)
 	for i := 0; i < nbrOfRobots; i++ {
 		robots[i] = &Robot{
@@ -66,7 +77,8 @@ func (r *Robot) Start(done chan<- int, secret []string) {
 
 // ExchangeMessage r1 send a message to r2
 // Simulate lost and duplicated messages
-func ExchangeMessage(robots []*Robot, percentageOfLost, percentageOfDuplicated, duplicatedNumber, maxAttempts int) int {
+func (s SecretManager) ExchangeMessage(robots []*Robot, percentageOfLost, percentageOfDuplicated,
+	duplicatedNumber, maxAttempts int) int {
 	messageSent := 0
 	size := len(robots)
 	for i := 0; i < maxAttempts; i++ {

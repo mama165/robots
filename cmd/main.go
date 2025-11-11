@@ -41,8 +41,9 @@ func main() {
 		panic(fmt.Errorf("max attempts should be positive : %d", config.MaxAttempts))
 	}
 
-	secret := robot.SplitSecret(config.Secret)
-	robots := robot.CreateRobots(secret, config.NbrOfRobots, config.BufferSize)
+	secretManager := robot.SecretManager{Config: config}
+	secret := secretManager.SplitSecret(config.Secret)
+	robots := secretManager.CreateRobots(secret, config.NbrOfRobots, config.BufferSize)
 	done = make(chan int)
 
 	for _, r := range robots {
@@ -50,7 +51,7 @@ func main() {
 	}
 
 	for {
-		robot.ExchangeMessage(robots, config.PercentageOfLost, config.PercentageOfDuplicated, config.DuplicatedNumber, config.MaxAttempts)
+		secretManager.ExchangeMessage(robots, config.PercentageOfLost, config.PercentageOfDuplicated, config.DuplicatedNumber, config.MaxAttempts)
 		select {
 		case id := <-done:
 			file, err := os.Create(config.OutputFile)
