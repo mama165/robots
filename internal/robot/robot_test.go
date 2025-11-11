@@ -2,7 +2,7 @@ package robot
 
 import (
 	"github.com/stretchr/testify/assert"
-	"math/rand"
+	"os"
 	"testing"
 )
 
@@ -19,8 +19,8 @@ func TestSplitSecret(t *testing.T) {
 func TestCreateRobots(t *testing.T) {
 	ass := assert.New(t)
 	words := []string{"a", "b", "c", "d"}
-	secretManager := SecretManager{Config: Config{}}
-	robots := secretManager.CreateRobots(words, 3, 10)
+	secretManager := SecretManager{Config: Config{NbrOfRobots: 3, BufferSize: 10}}
+	robots := secretManager.CreateRobots(words)
 
 	ass.Equal(3, len(robots))
 	total := 0
@@ -31,31 +31,50 @@ func TestCreateRobots(t *testing.T) {
 	ass.Equal(total, len(words))
 }
 
-func TestHasReconstructedSecret(t *testing.T) {
+func TestIsSecretRebuilt(t *testing.T) {
 	ass := assert.New(t)
-	expected := []string{"a", "b", "c"}
-	tests := []struct {
-		name   string
-		words  []string
-		result bool
-	}{
-		{"Exact match", []string{"a", "b", "c"}, true},
-		{"Missing one", []string{"a", "b"}, false},
-		{"Extra word", []string{"a", "b", "c", "d"}, true},
-		{"Duplicated words", []string{"a", "a", "b", "c"}, true},
-	}
-
-	for _, tt := range tests {
-		ass.Equal(tt.result, HasReconstructedSecret(expected, tt.words))
-	}
+	completed := IsSecretCompleted([]string{"a", "b", "c."}, ".")
+	ass.True(completed)
 }
 
 func TestExchangeAtLeastOneMessage(t *testing.T) {
 	ass := assert.New(t)
-	rand.Seed(42)
-	secretManager := SecretManager{Config: Config{}}
-	robots := secretManager.CreateRobots([]string{"alpha", "beta", "gamma"}, 3, 10)
-	sent := secretManager.ExchangeMessage(robots, 0, 0, 0, 50)
+	secretManager := SecretManager{Config: Config{
+		MaxAttempts: 2,
+	}}
+	r1 := Robot{
+		ID:    0,
+		Words: []string{"alpha", "gamma"},
+		Inbox: make(chan Inbox, 10),
+	}
+	r2 := Robot{
+		ID:    1,
+		Words: []string{"beta"},
+		Inbox: make(chan Inbox, 10),
+	}
+	sent := secretManager.ExchangeMessage(r1, r2)
+
 	ass.GreaterOrEqual(sent, 1)
-	ass.LessOrEqual(sent, 50)
+	ass.LessOrEqual(sent, 2)
+}
+
+func TestWriteSecret(t *testing.T) {
+	ass := assert.New(t)
+	tmpFile := "test_secret.txt"
+	secretManager := SecretManager{Config: Config{OutputFile: tmpFile}}
+
+	secret := "Hidden beneath the oak"
+	err := secretManager.WriteSecret(secret)
+	ass.NoError(err)
+
+	// Checking the file existence
+	_, err = os.Stat(tmpFile)
+	ass.NoError(err)
+
+	data, err := os.ReadFile(tmpFile)
+	ass.NoError(err)
+	ass.Equal(secret, string(data))
+
+	err = os.Remove(tmpFile)
+	ass.NoError(err)
 }

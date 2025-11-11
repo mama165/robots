@@ -5,15 +5,13 @@ import (
 	"github.com/Netflix/go-env"
 	"log"
 	"math/rand"
-	"os"
 	"robots/internal/robot"
-	"strings"
 	"time"
 )
 
 var (
 	config robot.Config
-	done   chan int
+	winner chan robot.Robot
 )
 
 func main() {
@@ -23,51 +21,62 @@ func main() {
 		panic(err)
 	}
 	if config.NbrOfRobots <= 0 {
-		panic(fmt.Errorf("number of robots should be positive : %d", config.NbrOfRobots))
+		log.Panicf("number of robots should be positive : %d", config.NbrOfRobots)
 	}
 	if config.BufferSize <= 0 {
-		panic(fmt.Errorf("buffer size should be positive : %d", config.BufferSize))
+		log.Panicf("buffer size should be positive : %d", config.BufferSize)
 	}
 	if config.PercentageOfLost < 0 {
 		panic(fmt.Errorf("percentage of lost should be positive : %d", config.PercentageOfLost))
 	}
 	if config.PercentageOfDuplicated < 0 {
-		panic(fmt.Errorf("percentage of lost should be positive : %d", config.PercentageOfDuplicated))
+		log.Panicf("percentage of lost should be positive : %d", config.PercentageOfDuplicated)
 	}
 	if config.DuplicatedNumber < 0 {
-		panic(fmt.Errorf("duplicated number should be positive : %d", config.DuplicatedNumber))
+		log.Panicf("duplicated number should be positive : %d", config.DuplicatedNumber)
 	}
 	if config.MaxAttempts <= 0 {
-		panic(fmt.Errorf("max attempts should be positive : %d", config.MaxAttempts))
+		log.Panicf("max attempts should be positive : %d", config.MaxAttempts)
 	}
+
+	// Add a timeout for the overall execution
+	timeout := time.After(config.Timeout)
 
 	secretManager := robot.SecretManager{Config: config}
 	secret := secretManager.SplitSecret(config.Secret)
-	robots := secretManager.CreateRobots(secret, config.NbrOfRobots, config.BufferSize)
-	done = make(chan int)
+	robots := secretManager.CreateRobots(secret)
+	winner = make(chan robot.Robot)
 
+	// Running one goroutine for each robot to start
 	for _, r := range robots {
-		go r.Start(done, secret)
+		go secretManager.StartRobot(r, winner)
 	}
 
 	for {
-		secretManager.ExchangeMessage(robots, config.PercentageOfLost, config.PercentageOfDuplicated, config.DuplicatedNumber, config.MaxAttempts)
+		size := len(robots)
+		sender := rand.Intn(size)
+		receiver := rand.Intn(size)
+		if sender == receiver {
+			continue
+		}
+		secretManager.ExchangeMessage(*robots[sender], *robots[receiver])
 		select {
-		case id := <-done:
-			file, err := os.Create(config.OutputFile)
-			if err != nil {
+		case r := <-winner:
+			// A winner has been found
+			if err = secretManager.WriteSecret(r.BuildSecret()); err != nil {
 				panic(err)
 			}
-			defer file.Close()
-			if _, err := file.WriteString(strings.Join(robots[id].Words, " ")); err != nil {
-				panic(err)
-			}
-			log.Printf("Robot %d saved the message -> %s", id, config.OutputFile)
-			for _, robot := range robots {
-				close(robot.Inbox)
+			log.Printf("Robot %d won and saved the message in file -> %s", r.ID, config.OutputFile)
+			for _, robotChan := range robots {
+				// Properly close the channel
+				close(robotChan.Inbox)
 			}
 			return
+		case <-timeout:
+			log.Printf("Timeout after %s", config.Timeout)
+			return
 		default:
+			time.Sleep(10 * time.Millisecond) // To avoid the 100% of CPU
 		}
 	}
 }
