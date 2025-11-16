@@ -1,18 +1,26 @@
-BINARY=robot-secret
+# --------------------------
+# Configuration
+# --------------------------
 
-export SECRET ?= "Hidden beneath the old oak tree, golden coins patiently await discovery."
-export NBR_OF_ROBOTS ?= 6
-export BUFFER_SIZE ?= 10
-export END_OF_SECRET ?= "."
-export OUTPUT_FILE ?= "secret.txt"
-export PERCENTAGE_OF_LOST ?= 0
+BINARY         := robot-secret
+GO             := go
+
+export SECRET                  ?= "Hidden beneath the old oak tree, golden coins patiently await discovery."
+export NBR_OF_ROBOTS           ?= 6
+export BUFFER_SIZE             ?= 10
+export END_OF_SECRET           ?= "."
+export OUTPUT_FILE             ?= "secret.txt"
+export PERCENTAGE_OF_LOST      ?= 0
 export PERCENTAGE_OF_DUPLICATED ?= 0
-export DUPLICATED_NUMBER ?= 0
-export MAX_ATTEMPTS ?= 50
-export TIMEOUT ?= 10s
-export QUIET_PERIOD ?= 5s
+export DUPLICATED_NUMBER       ?= 0
+export MAX_ATTEMPTS            ?= 50
+export TIMEOUT                 ?= 10s
+export QUIET_PERIOD            ?= 5s
+export LOG_LEVEL               ?= DEBUG
 
-GO=go
+# --------------------------
+# Targets
+# --------------------------
 
 .PHONY: all build run clean test
 
@@ -33,6 +41,7 @@ run: build
 	MAX_ATTEMPTS="$(MAX_ATTEMPTS)" \
 	TIMEOUT="$(TIMEOUT)" \
 	QUIET_PERIOD="$(QUIET_PERIOD)" \
+	LOG_LEVEL="$(LOG_LEVEL)" \
 	./$(BINARY)
 
 test:

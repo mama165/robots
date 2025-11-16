@@ -2,6 +2,7 @@ package robot
 
 import (
 	"github.com/stretchr/testify/assert"
+	"log/slog"
 	"os"
 	"testing"
 )
@@ -26,7 +27,7 @@ func TestCreateRobots(t *testing.T) {
 	total := 0
 	for _, r := range robots {
 		ass.Equal(10, cap(r.Inbox))
-		total += len(r.Words)
+		total += len(r.GetWords(false))
 	}
 	ass.Equal(total, len(words))
 }
@@ -41,16 +42,16 @@ func TestExchangeAtLeastOneMessage(t *testing.T) {
 	ass := assert.New(t)
 	secretManager := SecretManager{Config: Config{
 		MaxAttempts: 2,
-	}}
+	}, Log: slog.Default()}
 	r1 := Robot{
-		ID:    0,
-		Words: []string{"alpha", "gamma"},
-		Inbox: make(chan Inbox, 10),
+		ID:          0,
+		SecretParts: []SecretPart{{1, "alpha"}, {2, "gamma"}},
+		Inbox:       make(chan Inbox, 10),
 	}
 	r2 := Robot{
-		ID:    1,
-		Words: []string{"beta"},
-		Inbox: make(chan Inbox, 10),
+		ID:          1,
+		SecretParts: []SecretPart{{1, "beta"}},
+		Inbox:       make(chan Inbox, 10),
 	}
 	sent := secretManager.ExchangeMessage(r1, r2)
 

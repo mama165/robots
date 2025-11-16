@@ -1,10 +1,13 @@
 package robot
 
 import (
-	"log"
+	"fmt"
+	"github.com/samber/lo"
+	"log/slog"
 	"math/rand"
 	"os"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 )
@@ -21,24 +24,49 @@ type Config struct {
 	MaxAttempts            int           `env:"MAX_ATTEMPTS,required=true"`
 	Timeout                time.Duration `env:"TIMEOUT,required=true"`
 	QuietPeriod            time.Duration `env:"QUIET_PERIOD,required=true"`
+	LogLevel               string        `env:"LOG_LEVEL,default=INFO"`
 }
 
 type Robot struct {
 	ID            int // Index of the robots
-	Words         []string
+	SecretParts   []SecretPart
 	Inbox         chan Inbox
 	LastUpdatedAt time.Time // Necessary to know if no words have been received since a long time
 }
 
-func (r *Robot) BuildSecret() string {
-	return strings.Join(r.Words, " ")
+// SecretPart Represents a word and the position from the secret
+type SecretPart struct {
+	Index int // Index of the word
+	Word  string
 }
 
 // Inbox represents the message sent by a robot
 type Inbox struct {
-	From  int // Index of the robot (only for logging)
-	Words []string
+	From        int // Index of the robot (only for logging)
+	SecretParts []SecretPart
 }
+
+// GetWords Returns words contained in the robot
+// Can be ordered or unordered by index of the initial secret
+func (r *Robot) GetWords(ordered bool) []string {
+	parts := r.SecretParts
+	if ordered {
+		tmp := make([]SecretPart, len(parts))
+		copy(tmp, parts)
+		sort.Slice(tmp, func(i, j int) bool {
+			return tmp[i].Index < tmp[j].Index
+		})
+		parts = tmp
+	}
+	return lo.Map(parts, func(p SecretPart, _ int) string {
+		return p.Word
+	})
+}
+
+func (r *Robot) BuildSecret() string {
+	return strings.Join(r.GetWords(true), " ")
+}
+
 type ISecretManager interface {
 	SplitSecret(word string) []string
 	CreateRobots(words []string) []*Robot
@@ -49,6 +77,7 @@ type ISecretManager interface {
 
 type SecretManager struct {
 	Config Config
+	Log    *slog.Logger
 }
 
 // SplitSecret Initial sentences split into words
@@ -57,43 +86,43 @@ func (s SecretManager) SplitSecret(word string) []string {
 }
 
 // CreateRobots Randomly assign words to n robots
+// Each of the contains word with indexes
 func (s SecretManager) CreateRobots(words []string) []*Robot {
 	robots := make([]*Robot, s.Config.NbrOfRobots)
 	for i := 0; i < s.Config.NbrOfRobots; i++ {
 		robots[i] = &Robot{
 			ID:            i,
-			Words:         []string{},
+			SecretParts:   []SecretPart{},
 			Inbox:         make(chan Inbox, s.Config.BufferSize),
 			LastUpdatedAt: time.Unix(0, 0),
 		}
 	}
 
-	for _, word := range words {
+	for index, word := range words {
 		key := rand.Intn(s.Config.NbrOfRobots)
-		robots[key].Words = append(robots[key].Words, word)
+		secretPart := SecretPart{Index: index, Word: word}
+		robots[key].SecretParts = append(robots[key].SecretParts, secretPart)
 	}
 	return robots
 }
 
+// StartRobot Collect all messages exchanged
+// Opened as long as robot communicate
 func (s SecretManager) StartRobot(robot *Robot, winner chan<- Robot) {
-	// Collect all messages exchanged
-	// Opened as long as robot communicate
 	for inbox := range robot.Inbox {
-		for _, word := range inbox.Words {
+		for _, secretPart := range inbox.SecretParts {
 			// Updating LastUpdatedAt if the word doesn't exist
-			// Supposing no duplicated words
-			if !slices.Contains(robot.Words, word) {
+			if !slices.Contains(robot.SecretParts, secretPart) {
 				robot.LastUpdatedAt = time.Now().UTC()
-				robot.Words = append(robot.Words, word)
+				robot.SecretParts = append(robot.SecretParts, secretPart)
 				continue
 			}
 		}
 		// For each inbox merged with word
 		// Check the secret has been completed
-		// Only if no update since 5 seconds
+		// Only if no update since a chosen duration
 		elapsed := robot.LastUpdatedAt.Add(s.Config.QuietPeriod).Before(time.Now().UTC())
-
-		if elapsed && IsSecretCompleted(robot.Words, s.Config.EndOfSecret) {
+		if elapsed && IsSecretCompleted(robot.GetWords(false), s.Config.EndOfSecret) {
 			winner <- *robot
 			return
 		}
@@ -108,9 +137,9 @@ func (s SecretManager) ExchangeMessage(sender, receiver Robot) int {
 	}
 	messageSent := 0
 	for i := 0; i < s.Config.MaxAttempts; i++ {
-		msg := Inbox{From: sender.ID, Words: sender.Words}
+		msg := Inbox{From: sender.ID, SecretParts: sender.SecretParts}
 
-		log.Printf("Robot %d communicates with robot %d", sender.ID, receiver.ID)
+		s.Log.Debug(fmt.Sprintf("Robot %d communicates with robot %d", sender.ID, receiver.ID))
 
 		// Calculate and simulate a random percentage
 		isSimulated := func(percentage int) bool {
@@ -139,6 +168,7 @@ func (s SecretManager) ExchangeMessage(sender, receiver Robot) int {
 	return messageSent
 }
 
+// WriteSecret Write the secret in a file
 func (s SecretManager) WriteSecret(secret string) error {
 	file, err := os.Create(s.Config.OutputFile)
 	if err != nil {
@@ -149,10 +179,10 @@ func (s SecretManager) WriteSecret(secret string) error {
 	return err
 }
 
-// IsSecretCompleted Verify if the last word contains a "."
+// IsSecretCompleted Verify if a word contains a "."
 func IsSecretCompleted(words []string, endOfSecret string) bool {
-	for _, w := range words {
-		if strings.HasSuffix(w, endOfSecret) {
+	for _, word := range words {
+		if strings.HasSuffix(word, endOfSecret) {
 			return true
 		}
 	}

@@ -1,74 +1,71 @@
-# Robot Secret Reconstruction Simulation
+# 🚀 Robot Secret Reconstruction Simulation
 
-## Description
+## 📘 Description
 
-This project simulates 6 to N robots collaborating to reconstruct a secret distributed as individual words. Each word of the secret is randomly assigned to a robot, so no robot initially has the complete secret. Robots communicate **only via messages** (Go channels) to propagate words.
+This project simulates the collaboration of **6 to N robots** to reconstruct a secret distributed across multiple words.  
+Each robot receives **a random subset of the secret**, and no robot knows the full phrase initially.
 
-The goal is to reconstruct the complete secret and write it to a single, well-known file as soon as one robot has rebuilt the entire message.
+Robots communicate using a single method:  
+➡️ **message exchanges via Go channels**.
+
+The goal is for **one robot to reconstruct the entire secret**, then write it to a final output file once all words have been received and at least one word contains the end-of-secret character (`END_OF_SECRET`).
 
 The simulation includes realistic conditions:
 
-- Messages can be randomly lost or duplicated.
-- Robots communicate concurrently using goroutines and buffered channels.
-- The secret is considered complete once all words are received **and at least one word ends with the specified `END_OF_SECRET` character**.
+- Random message loss and duplication
+- Concurrent execution via goroutines
+- Progressive propagation of words between robots
+- Proper shutdown once a robot reconstructs the secret
 
 ---
 
-## Features
+## ✨ Features
 
-- Random distribution of secret words among robots.
-- Asynchronous robot communication via Go channels.
-- Handling of message duplication and loss.
-- Secret reconstruction by any robot once all words are received.
-- Writing the reconstructed secret to a single output file.
-- Safe concurrent operations with goroutines and buffered channels.
-- Configurable quiet period to ensure all messages have propagated before completion.
-- Configurable maximum attempts for message exchanges.
-
----
-
-## Assumptions
-
-1. Robots **do not permanently fail** in this version (all goroutines remain active).
-2. Messages may be **lost or duplicated**, but a robot eventually receives all required words unless the network is completely blocked.
-3. The **secret reconstruction is independent of word order**. Reconstruction succeeds once all words are present and at least one word ends with `END_OF_SECRET`.
-4. The output file (`OUTPUT_FILE`) is considered the final and unique destination.
-5. Robot goroutines are properly stopped after the secret is written.
-6. Configuration values are passed via **environment variables**.
+- Random distribution of secret words among robots
+- Asynchronous communication using goroutines and buffered channels
+- Configurable handling of lost and duplicated messages
+- Secret reconstruction once all words have been collected
+- Writing the reconstructed secret to a single output file (`OUTPUT_FILE`)
+- Quiet period (`QUIET_PERIOD`) to ensure all messages have propagated
+- Maximum attempt limit (`MAX_ATTEMPTS`) for message exchanges
+- Structured logging configurable via `LOG_LEVEL` (`DEBUG`, `INFO`, `WARN`, `ERROR`)
+- Proper shutdown of robot goroutines after reconstruction
 
 ---
 
-## Environment Variables
+## 🧠 Assumptions
 
-| Variable                   | Description |
-|----------------------------|------------|
-| `SECRET`                   | The secret phrase to reconstruct. |
-| `NBR_OF_ROBOTS`            | Number of robots to simulate. |
-| `BUFFER_SIZE`              | Channel buffer size for each robot. |
-| `END_OF_SECRET`            | Character indicating the end of the secret (e.g., "."). |
-| `OUTPUT_FILE`              | Output file where the secret will be written. |
-| `PERCENTAGE_OF_LOST`       | Percentage of messages randomly lost. |
-| `PERCENTAGE_OF_DUPLICATED` | Percentage of messages randomly duplicated. |
-| `DUPLICATED_NUMBER`        | Number of times a message is duplicated if duplication occurs. |
-| `MAX_ATTEMPTS`             | Maximum number of attempts for sending messages between robots. |
-| `TIMEOUT`                  | Overall timeout for the simulation (e.g., `10s`). |
-| `QUIET_PERIOD`             | Time to wait after the last word received before declaring the secret complete (e.g., `5s`). |
+1. No robot permanently fails: all goroutines remain active during the simulation.
+2. Messages may be lost or duplicated but are not permanently blocked.
+3. Secret reconstruction is **independent of word order**: it succeeds once all expected words are present.
+4. The `END_OF_SECRET` character determines the logical end of the secret.
+5. The output file (`OUTPUT_FILE`) is the single canonical destination.
+6. All configuration is provided via **environment variables** or the Makefile.
 
 ---
 
-## Example Usage
+## 🔧 Environment Variables
+
+| Variable                     | Description |
+|------------------------------|-------------|
+| `SECRET`                     | The secret phrase to reconstruct. |
+| `NBR_OF_ROBOTS`              | Number of robots in the simulation. |
+| `BUFFER_SIZE`                | Buffer size for each robot’s channel. |
+| `END_OF_SECRET`              | Character marking the end of the secret (e.g., `"."`). |
+| `OUTPUT_FILE`                | File where the reconstructed secret will be written. |
+| `PERCENTAGE_OF_LOST`         | Percentage of messages randomly lost. |
+| `PERCENTAGE_OF_DUPLICATED`   | Percentage of messages randomly duplicated. |
+| `DUPLICATED_NUMBER`          | Number of times a message is duplicated if duplication occurs. |
+| `MAX_ATTEMPTS`               | Maximum number of attempts for sending messages between robots. |
+| `TIMEOUT`                    | Overall timeout for the simulation (e.g., `10s`). |
+| `QUIET_PERIOD`               | Time to wait after the last word is received before declaring the secret complete. |
+| `LOG_LEVEL`                  | Log level (`DEBUG`, `INFO`, `WARN`, `ERROR`). |
+
+---
+
+## ▶️ Running via Makefile (recommended)
+
+The Makefile handles compilation, execution, and environment variable setup:
 
 ```bash
-export SECRET="Hidden beneath the old oak tree, golden coins patiently await discovery."
-export NBR_OF_ROBOTS=10
-export BUFFER_SIZE=100
-export END_OF_SECRET="."
-export OUTPUT_FILE="secret.txt"
-export PERCENTAGE_OF_LOST=10
-export PERCENTAGE_OF_DUPLICATED=10
-export DUPLICATED_NUMBER=14
-export MAX_ATTEMPTS=50
-export TIMEOUT=10s
-export QUIET_PERIOD=5s
-
-go run main.go
+make run
