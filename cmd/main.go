@@ -4,68 +4,25 @@ import (
 	"fmt"
 	"github.com/Netflix/go-env"
 	"log/slog"
-	"math/rand"
 	"os"
 	"robots/internal/robot"
-	"time"
-)
-
-var (
-	config robot.Config
-	winner chan robot.Robot
 )
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
+	var config robot.Config
 	if _, err := env.UnmarshalFromEnviron(&config); err != nil {
 		panic(err)
 	}
 	log := NewLogger(config.LogLevel)
-	if err := validateEnvVariables(); err != nil {
+	if err := validateEnvVariables(config); err != nil {
 		log.Info(err.Error())
 		panic(err)
 	}
 
-	// Add a timeout for the overall execution
-	timeout := time.After(config.Timeout)
-
 	secretManager := robot.SecretManager{Config: config, Log: log}
 	secret := secretManager.SplitSecret(config.Secret)
 	robots := secretManager.CreateRobots(secret)
-	winner = make(chan robot.Robot)
-
-	// Running one goroutine for each robot to start
-	for _, r := range robots {
-		go secretManager.StartRobot(r, winner)
-	}
-
-	for {
-		size := len(robots)
-		sender := rand.Intn(size)
-		receiver := rand.Intn(size)
-		if sender == receiver {
-			continue
-		}
-		secretManager.ExchangeMessage(*robots[sender], *robots[receiver])
-		select {
-		case r := <-winner:
-			// A winner has been found
-			if err := secretManager.WriteSecret(r.BuildSecret()); err != nil {
-				panic(err)
-			}
-			log.Info(fmt.Sprintf("Robot %d won and saved the message in file -> %s", r.ID, config.OutputFile))
-			for _, robotChan := range robots {
-				// Properly close the channel
-				close(robotChan.Inbox)
-			}
-			return
-		case <-timeout:
-			log.Info(fmt.Sprintf("Timeout after %s", config.Timeout))
-			return
-		default:
-			time.Sleep(10 * time.Millisecond) // To avoid the 100% of CPU
-		}
-	}
+	secretManager.FindSecret(robots)
 }
 
 // NewLogger Build a logger
@@ -81,9 +38,9 @@ func NewLogger(logLevel string) *slog.Logger {
 	return slog.New(handler)
 }
 
-func validateEnvVariables() error {
-	if config.NbrOfRobots <= 0 {
-		return fmt.Errorf("number of robots should be positive : %d", config.NbrOfRobots)
+func validateEnvVariables(config robot.Config) error {
+	if config.NbrOfRobots < 2 {
+		return fmt.Errorf("number of robots should be at least 2")
 	}
 	if config.BufferSize <= 0 {
 		return fmt.Errorf("buffer size should be positive : %d", config.BufferSize)

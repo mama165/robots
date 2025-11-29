@@ -26,7 +26,7 @@ func TestCreateRobots(t *testing.T) {
 	ass.Equal(3, len(robots))
 	total := 0
 	for _, r := range robots {
-		ass.Equal(10, cap(r.Inbox))
+		ass.Equal(10, cap(r.Message))
 		total += len(r.GetWords(false))
 	}
 	ass.Equal(total, len(words))
@@ -46,12 +46,12 @@ func TestExchangeAtLeastOneMessage(t *testing.T) {
 	r1 := Robot{
 		ID:          0,
 		SecretParts: []SecretPart{{1, "alpha"}, {2, "gamma"}},
-		Inbox:       make(chan Inbox, 10),
+		Message:     make(chan []byte, 10),
 	}
 	r2 := Robot{
 		ID:          1,
 		SecretParts: []SecretPart{{1, "beta"}},
-		Inbox:       make(chan Inbox, 10),
+		Message:     make(chan []byte, 10),
 	}
 	sent := secretManager.ExchangeMessage(r1, r2)
 

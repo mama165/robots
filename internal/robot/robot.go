@@ -2,11 +2,12 @@ package robot
 
 import (
 	"fmt"
+	"github.com/golang/protobuf/proto"
 	"github.com/samber/lo"
 	"log/slog"
 	"math/rand"
 	"os"
-	"slices"
+	robotpb "robots/proto/pb-go"
 	"sort"
 	"strings"
 	"time"
@@ -24,13 +25,29 @@ type Config struct {
 	MaxAttempts            int           `env:"MAX_ATTEMPTS,required=true"`
 	Timeout                time.Duration `env:"TIMEOUT,required=true"`
 	QuietPeriod            time.Duration `env:"QUIET_PERIOD,required=true"`
+	GossipTime             time.Duration `env:"GOSSIP_TIME,required=true"`
 	LogLevel               string        `env:"LOG_LEVEL,default=INFO"`
+}
+
+type ISecretManager interface {
+	SplitSecret(word string) []string
+	CreateRobots(words []string) []Robot
+	FindSecret(robots []Robot)
+	StartGossip(robot Robot, robots []Robot)
+	CollectMessages(robot Robot, winner chan<- Robot)
+	ExchangeMessage(sender, receiver Robot) int
+	WriteSecret(secret string) error
+}
+
+type SecretManager struct {
+	Config Config
+	Log    *slog.Logger
 }
 
 type Robot struct {
 	ID            int // Index of the robots
 	SecretParts   []SecretPart
-	Inbox         chan Inbox
+	Message       chan []byte
 	LastUpdatedAt time.Time // Necessary to know if no words have been received since a long time
 }
 
@@ -40,10 +57,15 @@ type SecretPart struct {
 	Word  string
 }
 
-// Inbox represents the message sent by a robot
-type Inbox struct {
-	From        int // Index of the robot (only for logging)
-	SecretParts []SecretPart
+func ChooseRobot(current Robot, robots []Robot) Robot {
+	var receiver Robot
+	for {
+		receiver = robots[rand.Intn(len(robots))]
+		if receiver.ID != current.ID {
+			break
+		}
+	}
+	return receiver
 }
 
 // GetWords Returns words contained in the robot
@@ -67,19 +89,6 @@ func (r *Robot) BuildSecret() string {
 	return strings.Join(r.GetWords(true), " ")
 }
 
-type ISecretManager interface {
-	SplitSecret(word string) []string
-	CreateRobots(words []string) []*Robot
-	StartRobot(robot *Robot, winner chan<- Robot)
-	ExchangeMessage(sender, receiver Robot) int
-	WriteSecret(secret string) error
-}
-
-type SecretManager struct {
-	Config Config
-	Log    *slog.Logger
-}
-
 // SplitSecret Initial sentences split into words
 func (s SecretManager) SplitSecret(word string) []string {
 	return strings.Fields(word)
@@ -87,13 +96,13 @@ func (s SecretManager) SplitSecret(word string) []string {
 
 // CreateRobots Randomly assign words to n robots
 // Each of the contains word with indexes
-func (s SecretManager) CreateRobots(words []string) []*Robot {
-	robots := make([]*Robot, s.Config.NbrOfRobots)
+func (s SecretManager) CreateRobots(words []string) []Robot {
+	robots := make([]Robot, s.Config.NbrOfRobots)
 	for i := 0; i < s.Config.NbrOfRobots; i++ {
-		robots[i] = &Robot{
+		robots[i] = Robot{
 			ID:            i,
 			SecretParts:   []SecretPart{},
-			Inbox:         make(chan Inbox, s.Config.BufferSize),
+			Message:       make(chan []byte, s.Config.BufferSize),
 			LastUpdatedAt: time.Unix(0, 0),
 		}
 	}
@@ -106,27 +115,79 @@ func (s SecretManager) CreateRobots(words []string) []*Robot {
 	return robots
 }
 
-// StartRobot Collect all messages exchanged
+// FindSecret Start the secret exchange
+func (s SecretManager) FindSecret(robots []Robot) {
+	winner := make(chan Robot)
+	timeout := time.After(s.Config.Timeout)
+
+	// Running two goroutines for each robot to start
+	for _, robot := range robots {
+		go s.CollectMessages(robot, winner)
+		go s.StartGossip(robot, robots)
+	}
+
+	for {
+		select {
+		case r := <-winner:
+			// A winner has been found
+			if err := s.WriteSecret(r.BuildSecret()); err != nil {
+				panic(err)
+			}
+			s.Log.Info(fmt.Sprintf("Robot %d won and saved the message in file -> %s", r.ID, s.Config.OutputFile))
+			for _, robotChan := range robots {
+				// Properly close the channel
+				close(robotChan.Message)
+			}
+			return
+		case <-timeout:
+			s.Log.Info(fmt.Sprintf("Timeout after %s", s.Config.Timeout))
+			return
+		}
+	}
+}
+
+func (s SecretManager) StartGossip(robot Robot, robots []Robot) {
+	ticker := time.NewTicker(s.Config.GossipTime)
+	defer ticker.Stop()
+	for range ticker.C {
+		receiver := ChooseRobot(robot, robots)
+		s.ExchangeMessage(robot, receiver)
+	}
+}
+
+// CollectMessages Collect all messages exchanged
 // Opened as long as robot communicate
-func (s SecretManager) StartRobot(robot *Robot, winner chan<- Robot) {
-	for inbox := range robot.Inbox {
-		for _, secretPart := range inbox.SecretParts {
+func (s SecretManager) CollectMessages(robot Robot, winner chan<- Robot) {
+	for message := range robot.Message {
+		var decoded robotpb.Message
+		if err := proto.Unmarshal(message, &decoded); err != nil {
+			s.Log.Info(fmt.Sprintf("Unable to decode proto message : %s", err.Error()))
+			continue
+		}
+		secretParts := fromSecretPartsPb(decoded.SecretParts)
+		for _, secretPart := range secretParts {
 			// Updating LastUpdatedAt if the word doesn't exist
-			if !slices.Contains(robot.SecretParts, secretPart) {
+			if !containsIndex(robot.SecretParts, secretPart.Index) {
 				robot.LastUpdatedAt = time.Now().UTC()
 				robot.SecretParts = append(robot.SecretParts, secretPart)
 				continue
 			}
 		}
-		// For each inbox merged with word
+		// For each message merged with word
 		// Check the secret has been completed
 		// Only if no update since a chosen duration
 		elapsed := robot.LastUpdatedAt.Add(s.Config.QuietPeriod).Before(time.Now().UTC())
 		if elapsed && IsSecretCompleted(robot.GetWords(false), s.Config.EndOfSecret) {
-			winner <- *robot
+			winner <- robot
 			return
 		}
 	}
+}
+
+func containsIndex(secretParts []SecretPart, index int) bool {
+	return lo.ContainsBy(secretParts, func(item SecretPart) bool {
+		return item.Index == index
+	})
 }
 
 // ExchangeMessage r1 send a message to r2
@@ -137,8 +198,6 @@ func (s SecretManager) ExchangeMessage(sender, receiver Robot) int {
 	}
 	messageSent := 0
 	for i := 0; i < s.Config.MaxAttempts; i++ {
-		msg := Inbox{From: sender.ID, SecretParts: sender.SecretParts}
-
 		s.Log.Debug(fmt.Sprintf("Robot %d communicates with robot %d", sender.ID, receiver.ID))
 
 		// Calculate and simulate a random percentage
@@ -158,8 +217,17 @@ func (s SecretManager) ExchangeMessage(sender, receiver Robot) int {
 		}
 
 		for j := 0; j <= times; j++ {
+			message := robotpb.Message{
+				From:        int64(sender.ID),
+				SecretParts: toSecretPartsPb(sender.SecretParts),
+			}
+			msg, err := proto.Marshal(&message)
+			if err != nil {
+				s.Log.Info(fmt.Sprintf("Unable to encode proto message : %s", err.Error()))
+				continue
+			}
 			select {
-			case receiver.Inbox <- msg: // For the range iterating over Inboxes
+			case receiver.Message <- msg: // For the range iterating over messages
 				messageSent++
 			default:
 			}
@@ -187,4 +255,19 @@ func IsSecretCompleted(words []string, endOfSecret string) bool {
 		}
 	}
 	return false
+}
+
+func fromSecretPartsPb(secretPartsPb []*robotpb.SecretPart) []SecretPart {
+	return lo.Map(secretPartsPb, func(item *robotpb.SecretPart, _ int) SecretPart {
+		return SecretPart{Index: int(item.Index), Word: item.Word}
+	})
+}
+
+func toSecretPartsPb(secretParts []SecretPart) []*robotpb.SecretPart {
+	return lo.Map(secretParts, func(item SecretPart, _ int) *robotpb.SecretPart {
+		return &robotpb.SecretPart{
+			Index: int64(item.Index),
+			Word:  item.Word,
+		}
+	})
 }

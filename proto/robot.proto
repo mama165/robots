@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+message Message {
+  int64 from = 1;
+  repeated SecretPart secret_parts = 2;
+}
+
+message SecretPart {
+  int64 index = 1;
+  string word = 2;
+}
