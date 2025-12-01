@@ -1,11 +1,16 @@
 syntax = "proto3";
 
-message Message {
-  int64 from = 1;
-  repeated SecretPart secret_parts = 2;
-}
-
 message SecretPart {
   int64 index = 1;
   string word = 2;
+}
+
+// A robot send his own indexes
+message GossipSummary {
+  repeated int64 indexes = 1;
+}
+
+// A robot responds his own secretParts (index, word)
+message GossipUpdate {
+  repeated SecretPart secret_parts = 1;
 }

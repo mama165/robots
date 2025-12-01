@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"github.com/Netflix/go-env"
 	"log/slog"
 	"os"
+	"os/signal"
 	"robots/internal/robot"
 )
 
@@ -19,10 +21,15 @@ func main() {
 		panic(err)
 	}
 
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, config.Timeout)
+	defer cancel()
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt) // Handle CTRL+C
+	defer stop()
 	secretManager := robot.SecretManager{Config: config, Log: log}
 	secret := secretManager.SplitSecret(config.Secret)
 	robots := secretManager.CreateRobots(secret)
-	secretManager.FindSecret(robots)
+	secretManager.FindSecret(ctx, robots)
 }
 
 // NewLogger Build a logger
