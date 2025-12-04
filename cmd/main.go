@@ -7,11 +7,14 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"robots/internal/robot"
+	"robots/internal/conf"
+	rb "robots/internal/robot"
+	sp "robots/internal/supervisor"
+	"robots/pkg/workers"
 )
 
 func main() {
-	var config robot.Config
+	var config conf.Config
 	if _, err := env.UnmarshalFromEnviron(&config); err != nil {
 		panic(err)
 	}
@@ -26,10 +29,22 @@ func main() {
 	defer cancel()
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt) // Handle CTRL+C
 	defer stop()
-	secretManager := robot.SecretManager{Config: config, Log: log}
+	secretManager := rb.SecretManager{Config: config, Log: log}
 	secret := secretManager.SplitSecret(config.Secret)
 	robots := secretManager.CreateRobots(secret)
-	secretManager.FindSecret(ctx, robots)
+	winner := make(chan rb.Robot)
+	supervisor := sp.NewSupervisor(ctx)
+
+	// Running two goroutines for each robot to start
+	for _, robot := range robots {
+		supervisor.
+			Add(workers.NewProcessSummaryWorker(config, log, &robot)).
+			Add(workers.NewUpdateWorker(config, log, &robot)).
+			Add(workers.NewSuperviseRobotWorker(config, log, &robot, winner)).
+			Add(workers.NewStartGossipWorker(config, log, &robot, robots))
+	}
+	// Only the winner goroutine handle the writing
+	supervisor.Add(workers.NewWriteSecretWorker(config, log, winner))
 }
 
 // NewLogger Build a logger
@@ -45,7 +60,7 @@ func NewLogger(logLevel string) *slog.Logger {
 	return slog.New(handler)
 }
 
-func validateEnvVariables(config robot.Config) error {
+func validateEnvVariables(config conf.Config) error {
 	if config.NbrOfRobots < 2 {
 		return fmt.Errorf("number of robots should be at least 2")
 	}
