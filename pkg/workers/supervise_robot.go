@@ -48,15 +48,17 @@ func (w SuperviseRobotWorker) Run(ctx context.Context) error {
 				select {
 				case w.winner <- *w.robot:
 					w.Log.Info(fmt.Sprintf("Robot %d won", w.robot.ID))
+					return nil
 				case <-ctx.Done():
 					w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+					return nil
 				default:
 					w.Log.Debug(fmt.Sprintf("Robot %d wanted to win but another one won", w.robot.ID))
 				}
-				return nil
 			}
 		case <-ctx.Done():
 			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+			return nil
 		}
 	}
 }

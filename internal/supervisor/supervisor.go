@@ -17,7 +17,7 @@ type Worker interface {
 }
 
 type ISupervisor interface {
-	Exec()
+	Run()
 	Add(worker Worker) ISupervisor
 	Start(worker Worker)
 	Stop()
@@ -30,9 +30,9 @@ type ISupervisor interface {
 // Shutdown properly if parent context is canceled
 // Wait for the end of all goroutines via WaitGroup
 type Supervisor struct {
-	ctx     context.Context // Stop everything
-	cancel  context.CancelFunc
-	wg      *sync.WaitGroup // Wait for the end of goroutines
+	ctx     context.Context    // To communicate a stop to all workers
+	cancel  context.CancelFunc // To stop the context
+	wg      *sync.WaitGroup    // Wait for the end of goroutines
 	log     *slog.Logger
 	workers []Worker
 }
@@ -41,7 +41,7 @@ func NewSupervisor(ctx context.Context, cancel context.CancelFunc, wg *sync.Wait
 	return Supervisor{ctx: ctx, cancel: cancel, wg: wg, log: log}
 }
 
-func (s *Supervisor) Exec() {
+func (s *Supervisor) Run() {
 	for _, worker := range s.workers {
 		s.Start(worker)
 	}
@@ -64,37 +64,39 @@ func (s *Supervisor) Start(worker Worker) {
 		defer s.wg.Done()
 
 		for {
-			select {
-			case <-s.ctx.Done():
+			if s.ctx.Err() != nil {
 				s.log.Info(fmt.Sprintf("Stopping : %s", worker.GetName()))
 				return
-			default:
 			}
 
-			// Protection against panic
-			func() {
+			// protection panic directement
+			err := func() (err error) {
 				defer func() {
 					if r := recover(); r != nil {
 						s.log.Error(fmt.Sprintf("Recovered panic in %s", worker.GetName()))
+						err = fmt.Errorf("panic")
 					}
 				}()
-
 				// Execute the children goroutine
 				// Restarted after a crash
 				// Not restarting the entire goroutine
-				if err := worker.Run(s.ctx); err != nil {
-					s.log.Error(fmt.Sprintf("Error %v in %s", err, worker.GetName()))
-				}
+				return worker.Run(s.ctx)
 			}()
 
-			// Petite pause pour éviter les boucles infinies
-			time.Sleep(200 * time.Millisecond)
+			if err == nil {
+				// Terminated properly, never restart !
+				s.log.Info(fmt.Sprintf("Worker finished : %s", worker.GetName()))
+				return
+			}
 
 			s.log.Info(fmt.Sprintf("Restarting : %s", worker.GetName()))
+			time.Sleep(200 * time.Millisecond)
 		}
 	}()
 }
 
+// Stop Cancel all goroutines listening channel for ctx.Done
+// Supervisor will wait for all goroutines to finish
 func (s *Supervisor) Stop() {
 	s.cancel()
 	s.wg.Wait()

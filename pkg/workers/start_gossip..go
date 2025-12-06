@@ -37,11 +37,16 @@ func (w StartGossipWorker) GetName() string {
 func (w StartGossipWorker) Run(ctx context.Context) error {
 	ticker := time.NewTicker(w.Config.GossipTime)
 	defer ticker.Stop()
-	for range ticker.C {
-		receiver := robot.ChooseRobot(*w.robot, w.robots)
-		w.ExchangeMessage(ctx, w.robot, &receiver)
+	for {
+		select {
+		case <-ticker.C:
+			receiver := robot.ChooseRobot(*w.robot, w.robots)
+			w.ExchangeMessage(ctx, w.robot, &receiver)
+		case <-ctx.Done():
+			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+			return nil
+		}
 	}
-	return nil
 }
 
 // ExchangeMessage r1 send a message to r2
@@ -83,6 +88,7 @@ func (w StartGossipWorker) ExchangeMessage(ctx context.Context, sender, receiver
 				messageSent++
 			case <-ctx.Done():
 				w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+				return
 			default:
 			}
 		}

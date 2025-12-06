@@ -12,6 +12,7 @@ import (
 	"time"
 )
 
+// UpdateWorker Fetch all missing parts coming from anybody
 type UpdateWorker struct {
 	Config conf.Config
 	Log    *slog.Logger
@@ -36,16 +37,12 @@ func (w UpdateWorker) Run(ctx context.Context) error {
 	for {
 		select {
 		case updateMsg := <-w.robot.GossipUpdate:
-			// On récupère les parties manquantes venant de n'importe qui
-			// On sait qu'on a récupéré uniquement les parties manquantes car c'est du gossip push-pull
 			var gossipUpdate robotpb.GossipUpdate
 			err := proto.Unmarshal(updateMsg, &gossipUpdate)
 			if err != nil {
 				w.Log.Info(fmt.Sprintf("Unable to decode proto message : %s", err.Error()))
 				continue
 			}
-			// TODO il faudra transformer robot.SecretParts en chan []byte pour écrire dedans
-			//TODO Doit-on contiuer à vérifier si on contient déjà le mot ?
 			secretParts := robot.FromSecretPartsPb(gossipUpdate.SecretParts)
 			for _, secretPart := range secretParts {
 				// Updating LastUpdatedAt if the word doesn't exist
@@ -57,6 +54,7 @@ func (w UpdateWorker) Run(ctx context.Context) error {
 			}
 		case <-ctx.Done():
 			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+			return nil
 		}
 	}
 }

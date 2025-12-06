@@ -64,6 +64,7 @@ func (w ProcessSummaryWorker) Run(ctx context.Context) error {
 			}
 		case <-ctx.Done():
 			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+			return nil
 		}
 	}
 }

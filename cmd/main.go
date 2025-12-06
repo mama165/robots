@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 	"github.com/Netflix/go-env"
-	"log/slog"
-	"os"
+	"github.com/mama165/sdk-go/logs"
 	"os/signal"
 	"robots/internal/conf"
 	rb "robots/internal/robot"
 	sp "robots/internal/supervisor"
 	"robots/pkg/workers"
 	"sync"
+	"syscall"
 )
 
 func main() {
@@ -19,16 +19,16 @@ func main() {
 	if _, err := env.UnmarshalFromEnviron(&config); err != nil {
 		panic(err)
 	}
-	log := NewLogger(config.LogLevel)
+	log := logs.GetLoggerFromString(config.LogLevel)
 	if err := validateEnvVariables(config); err != nil {
-		log.Info(err.Error())
+		log.Error(err.Error())
 		panic(err)
 	}
 
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, config.Timeout)
 	defer cancel()
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt) // Handle CTRL+C
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT) // Handle CTRL+C
 	defer stop()
 	secretManager := rb.SecretManager{Config: config, Log: log}
 	secret := secretManager.SplitSecret(config.Secret)
@@ -47,20 +47,12 @@ func main() {
 	}
 	// Only the winner goroutine handle the writing
 	supervisor.Add(workers.NewWriteSecretWorker(config, log, winner).WithName("write secret worker"))
-	supervisor.Exec()
-}
+	supervisor.Run()
 
-// NewLogger Build a logger
-// Fallback as INFO by default
-func NewLogger(logLevel string) *slog.Logger {
-	var level slog.Level
-	if err := level.UnmarshalText([]byte(logLevel)); err != nil {
-		level = slog.LevelInfo
-	}
-	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: level,
-	})
-	return slog.New(handler)
+	// Wait for the context cancellation (timeout or CTRL+C)
+	<-ctx.Done()
+	log.Info("Stopping supervisor...")
+	supervisor.Stop()
 }
 
 func validateEnvVariables(config conf.Config) error {

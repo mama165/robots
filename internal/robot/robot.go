@@ -68,7 +68,13 @@ func (r *Robot) Indexes() []int64 {
 }
 
 func (r *Robot) GetMissingParts(indexes []int) []SecretPart {
-	return nil
+	var missing []SecretPart
+	for _, sp := range r.SecretParts {
+		if !lo.Contains(indexes, sp.Index) {
+			missing = append(missing, sp)
+		}
+	}
+	return missing
 }
 
 // GetWords Returns words contained in the robot
