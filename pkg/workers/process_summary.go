@@ -17,10 +17,11 @@ type ProcessSummaryWorker struct {
 	Log    *slog.Logger
 	Name   string
 	robot  *robot.Robot
+	Robots []*robot.Robot
 }
 
-func NewProcessSummaryWorker(config conf.Config, logger *slog.Logger, robot *robot.Robot) ProcessSummaryWorker {
-	return ProcessSummaryWorker{Config: config, Log: logger, robot: robot}
+func NewProcessSummaryWorker(config conf.Config, logger *slog.Logger, robot *robot.Robot, robots []*robot.Robot) ProcessSummaryWorker {
+	return ProcessSummaryWorker{Config: config, Log: logger, robot: robot, Robots: robots}
 }
 
 func (w ProcessSummaryWorker) WithName(name string) supervisor.Worker {
@@ -42,12 +43,10 @@ func (w ProcessSummaryWorker) Run(ctx context.Context) error {
 				w.Log.Info(fmt.Sprintf("Unable to decode proto message : %s", err.Error()))
 				continue
 			}
-			// TODO Retourner les mots manquants ici
 			indexes := lo.Map(gossipSummary.Indexes, func(item int64, _ int) int {
 				return int(item)
 			})
-			// TODO construire getMissingParts
-			secretParts := w.robot.GetMissingParts(indexes)
+			secretParts := w.robot.GetWordsToSend(indexes)
 			msg, err := proto.Marshal(&robotpb.GossipUpdate{SecretParts: robot.ToSecretPartsPb(secretParts)})
 			if err != nil {
 				w.Log.Info(fmt.Sprintf("Unable to encode proto message : %s", err.Error()))
@@ -56,8 +55,15 @@ func (w ProcessSummaryWorker) Run(ctx context.Context) error {
 			// ⚠️ Don't forget to add a select case and default (not just writing)
 			// ⚠️ If the channel robot.GossipUpdate is slowly dequeued
 			// ⚠️ Can block the process
+			// Check if senderId exists
+			// Find the receiver
+			if gossipSummary.SenderId < 0 || int(gossipSummary.SenderId) > len(w.Robots) {
+				w.Log.Debug(fmt.Sprintf("Robot %d doesn't exist", gossipSummary.SenderId))
+				continue
+			}
+			receiver := w.Robots[gossipSummary.SenderId]
 			select {
-			case w.robot.GossipUpdate <- msg:
+			case receiver.GossipUpdate <- msg:
 				// Successfully sent the message
 			default:
 				w.Log.Debug(fmt.Sprintf("Robot %d : buffer is full, message is ignored", w.robot.ID))

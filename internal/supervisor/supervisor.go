@@ -23,22 +23,22 @@ type ISupervisor interface {
 	Stop()
 }
 
-// Supervisor Own a context and a cancel function
+// Supervisor Own a context and a Cancel function
 // Run each worker in a goroutine
 // Check panics and errors
 // Restart workers automatically
 // Shutdown properly if parent context is canceled
 // Wait for the end of all goroutines via WaitGroup
 type Supervisor struct {
-	ctx     context.Context    // To communicate a stop to all workers
-	cancel  context.CancelFunc // To stop the context
+	Ctx     context.Context    // To communicate a stop to all workers
+	Cancel  context.CancelFunc // To stop the context
 	wg      *sync.WaitGroup    // Wait for the end of goroutines
 	log     *slog.Logger
 	workers []Worker
 }
 
 func NewSupervisor(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup, log *slog.Logger) Supervisor {
-	return Supervisor{ctx: ctx, cancel: cancel, wg: wg, log: log}
+	return Supervisor{Ctx: ctx, Cancel: cancel, wg: wg, log: log}
 }
 
 func (s *Supervisor) Run() {
@@ -64,7 +64,7 @@ func (s *Supervisor) Start(worker Worker) {
 		defer s.wg.Done()
 
 		for {
-			if s.ctx.Err() != nil {
+			if s.Ctx.Err() != nil {
 				s.log.Info(fmt.Sprintf("Stopping : %s", worker.GetName()))
 				return
 			}
@@ -80,7 +80,7 @@ func (s *Supervisor) Start(worker Worker) {
 				// Execute the children goroutine
 				// Restarted after a crash
 				// Not restarting the entire goroutine
-				return worker.Run(s.ctx)
+				return worker.Run(s.Ctx)
 			}()
 
 			if err == nil {
@@ -95,9 +95,9 @@ func (s *Supervisor) Start(worker Worker) {
 	}()
 }
 
-// Stop Cancel all goroutines listening channel for ctx.Done
+// Stop Cancel all goroutines listening channel for Ctx.Done
 // Supervisor will wait for all goroutines to finish
 func (s *Supervisor) Stop() {
-	s.cancel()
+	s.Cancel()
 	s.wg.Wait()
 }

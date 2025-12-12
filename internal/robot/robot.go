@@ -46,8 +46,8 @@ type SecretPart struct {
 	Word  string
 }
 
-func ChooseRobot(current Robot, robots []Robot) Robot {
-	var receiver Robot
+func ChooseRobot(current *Robot, robots []*Robot) *Robot {
+	var receiver *Robot
 	for {
 		receiver = robots[rand.Intn(len(robots))]
 		if receiver.ID != current.ID {
@@ -67,10 +67,11 @@ func (r *Robot) Indexes() []int64 {
 	})
 }
 
-func (r *Robot) GetMissingParts(indexes []int) []SecretPart {
+// GetWordsToSend retourne tous les mots que le destinataire n'a pas encore
+func (r *Robot) GetWordsToSend(receiverIndexes []int) []SecretPart {
 	var missing []SecretPart
 	for _, sp := range r.SecretParts {
-		if !lo.Contains(indexes, sp.Index) {
+		if !lo.Contains(receiverIndexes, sp.Index) {
 			missing = append(missing, sp)
 		}
 	}
@@ -105,15 +106,15 @@ func (s SecretManager) SplitSecret(word string) []string {
 
 // CreateRobots Randomly assign words to n robots
 // Each of the contains word with indexes
-func (s SecretManager) CreateRobots(words []string) []Robot {
-	robots := make([]Robot, s.Config.NbrOfRobots)
+func (s SecretManager) CreateRobots(words []string) []*Robot {
+	robots := make([]*Robot, s.Config.NbrOfRobots)
 	for i := 0; i < s.Config.NbrOfRobots; i++ {
-		robots[i] = Robot{
+		robots[i] = &Robot{
 			ID:            i,
 			SecretParts:   []SecretPart{},
 			GossipSummary: make(chan []byte, s.Config.BufferSize),
 			GossipUpdate:  make(chan []byte, s.Config.BufferSize),
-			LastUpdatedAt: time.Unix(0, 0),
+			LastUpdatedAt: time.Now().UTC(),
 		}
 	}
 
@@ -133,12 +134,14 @@ func ContainsIndex(secretParts []SecretPart, index int) bool {
 
 // IsSecretCompleted Verify if a word contains a "."
 func (r *Robot) IsSecretCompleted(endOfSecret string) bool {
-	for _, word := range r.GetWords(false) {
-		if strings.HasSuffix(word, endOfSecret) {
-			return true
-		}
+	// On vérifie si le dernier mot a le point et si on a le nombre total de mots
+	// On suppose que SecretParts sont indexés de 0 à len(secret)-1
+	words := r.GetWords(true)
+	if len(words) == 0 {
+		return false
 	}
-	return false
+	lastWord := words[len(words)-1]
+	return strings.HasSuffix(lastWord, endOfSecret)
 }
 
 func FromSecretPartsPb(secretPartsPb []*robotpb.SecretPart) []SecretPart {

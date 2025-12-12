@@ -17,11 +17,11 @@ type UpdateWorker struct {
 	Config conf.Config
 	Log    *slog.Logger
 	Name   string
-	robot  *robot.Robot
+	Robot  *robot.Robot
 }
 
 func NewUpdateWorker(config conf.Config, logger *slog.Logger, robot *robot.Robot) UpdateWorker {
-	return UpdateWorker{Config: config, Log: logger, robot: robot}
+	return UpdateWorker{Config: config, Log: logger, Robot: robot}
 }
 
 func (w UpdateWorker) WithName(name string) supervisor.Worker {
@@ -36,7 +36,7 @@ func (w UpdateWorker) GetName() string {
 func (w UpdateWorker) Run(ctx context.Context) error {
 	for {
 		select {
-		case updateMsg := <-w.robot.GossipUpdate:
+		case updateMsg := <-w.Robot.GossipUpdate:
 			var gossipUpdate robotpb.GossipUpdate
 			err := proto.Unmarshal(updateMsg, &gossipUpdate)
 			if err != nil {
@@ -46,9 +46,9 @@ func (w UpdateWorker) Run(ctx context.Context) error {
 			secretParts := robot.FromSecretPartsPb(gossipUpdate.SecretParts)
 			for _, secretPart := range secretParts {
 				// Updating LastUpdatedAt if the word doesn't exist
-				if !robot.ContainsIndex(w.robot.SecretParts, secretPart.Index) {
-					w.robot.LastUpdatedAt = time.Now().UTC()
-					w.robot.SecretParts = append(w.robot.SecretParts, secretPart)
+				if !robot.ContainsIndex(w.Robot.SecretParts, secretPart.Index) {
+					w.Robot.LastUpdatedAt = time.Now().UTC()
+					w.Robot.SecretParts = append(w.Robot.SecretParts, secretPart)
 					continue
 				}
 			}

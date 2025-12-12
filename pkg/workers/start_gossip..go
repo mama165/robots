@@ -17,12 +17,12 @@ type StartGossipWorker struct {
 	Config conf.Config
 	Log    *slog.Logger
 	Name   string
-	robot  *robot.Robot
-	robots []robot.Robot
+	Robot  *robot.Robot
+	Robots []*robot.Robot
 }
 
-func NewStartGossipWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, robots []robot.Robot) StartGossipWorker {
-	return StartGossipWorker{Config: config, Log: log, robot: robot, robots: robots}
+func NewStartGossipWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, robots []*robot.Robot) StartGossipWorker {
+	return StartGossipWorker{Config: config, Log: log, Robot: robot, Robots: robots}
 }
 
 func (w StartGossipWorker) WithName(name string) supervisor.Worker {
@@ -40,8 +40,8 @@ func (w StartGossipWorker) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ticker.C:
-			receiver := robot.ChooseRobot(*w.robot, w.robots)
-			w.ExchangeMessage(ctx, w.robot, &receiver)
+			receiver := robot.ChooseRobot(w.Robot, w.Robots)
+			w.ExchangeMessage(ctx, w.Robot, receiver)
 		case <-ctx.Done():
 			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
 			return nil
@@ -77,7 +77,7 @@ func (w StartGossipWorker) ExchangeMessage(ctx context.Context, sender, receiver
 
 		for j := 0; j <= times; j++ {
 			// Sender sends his own indexes to receiver
-			gossipSender := robotpb.GossipSummary{Indexes: sender.Indexes()}
+			gossipSender := robotpb.GossipSummary{Indexes: sender.Indexes(), SenderId: int32(sender.ID)}
 			msgSender, err := proto.Marshal(&gossipSender)
 			if err != nil {
 				w.Log.Info(fmt.Sprintf("Unable to encode proto message : %s", err.Error()))

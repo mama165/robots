@@ -8,6 +8,7 @@ message SecretPart {
 // A robot send his own indexes
 message GossipSummary {
   repeated int64 indexes = 1;
+  int32 sender_id = 2;
 }
 
 // A robot responds his own secretParts (index, word)

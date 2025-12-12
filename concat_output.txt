@@ -1,0 +1,745 @@
+
+
+// ===== cmd/main.go =====
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"github.com/Netflix/go-env"
+	"github.com/mama165/sdk-go/logs"
+	"os/signal"
+	"robots/internal/conf"
+	rb "robots/internal/robot"
+	sp "robots/internal/supervisor"
+	"robots/pkg/workers"
+	"sync"
+	"syscall"
+)
+
+func main() {
+	var config conf.Config
+	if _, err := env.UnmarshalFromEnviron(&config); err != nil {
+		panic(err)
+	}
+	log := logs.GetLoggerFromString(config.LogLevel)
+	if err := validateEnvVariables(config); err != nil {
+		log.Error(err.Error())
+		panic(err)
+	}
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, config.Timeout)
+	defer cancel()
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT) // Handle CTRL+C
+	defer stop()
+	secretManager := rb.SecretManager{Config: config, Log: log}
+	secret := secretManager.SplitSecret(config.Secret)
+	robots := secretManager.CreateRobots(secret)
+	winner := make(chan rb.Robot)
+	waitGroup := sync.WaitGroup{}
+	supervisor := sp.NewSupervisor(ctx, cancel, &waitGroup, log)
+
+	// Running two goroutines for each robot to start
+	for _, robot := range robots {
+		supervisor.
+			Add(workers.NewProcessSummaryWorker(config, log, robot, robots).WithName("summary worker")).
+			Add(workers.NewUpdateWorker(config, log, robot).WithName("update worker")).
+			Add(workers.NewSuperviseRobotWorker(config, log, robot, winner).WithName("supervise robot worker")).
+			Add(workers.NewStartGossipWorker(config, log, robot, robots).WithName("start gossip worker"))
+	}
+	// Only the winner goroutine handle the writing
+	supervisor.Add(workers.NewWriteSecretWorker(config, log, winner).WithName("write secret worker"))
+	supervisor.Run()
+
+	// Wait for the context cancellation (timeout or CTRL+C)
+	<-ctx.Done()
+	log.Info("Stopping supervisor...")
+	supervisor.Stop()
+}
+
+func validateEnvVariables(config conf.Config) error {
+	if config.NbrOfRobots < 2 {
+		return fmt.Errorf("number of robots should be at least 2")
+	}
+	if config.BufferSize <= 0 {
+		return fmt.Errorf("buffer size should be positive : %d", config.BufferSize)
+	}
+	if config.PercentageOfLost < 0 {
+		return fmt.Errorf("percentage of lost should be positive : %d", config.PercentageOfLost)
+	}
+	if config.PercentageOfDuplicated < 0 {
+		return fmt.Errorf("percentage of lost should be positive : %d", config.PercentageOfDuplicated)
+	}
+	if config.DuplicatedNumber < 0 {
+		return fmt.Errorf("duplicated number should be positive : %d", config.DuplicatedNumber)
+	}
+	if config.MaxAttempts <= 0 {
+		return fmt.Errorf("max attempts should be positive : %d", config.MaxAttempts)
+	}
+	return nil
+}
+
+
+// ===== internal/conf/config.go =====
+
+package conf
+
+import "time"
+
+type Config struct {
+	NbrOfRobots            int           `env:"NBR_OF_ROBOTS,required=true"`
+	Secret                 string        `env:"SECRET,required=true"`
+	OutputFile             string        `env:"OUTPUT_FILE,required=true"`
+	BufferSize             int           `env:"BUFFER_SIZE,required=true"`
+	EndOfSecret            string        `env:"END_OF_SECRET,required=true"`
+	PercentageOfLost       int           `env:"PERCENTAGE_OF_LOST,required=true"`
+	PercentageOfDuplicated int           `env:"PERCENTAGE_OF_DUPLICATED,required=true"`
+	DuplicatedNumber       int           `env:"DUPLICATED_NUMBER,required=true"`
+	MaxAttempts            int           `env:"MAX_ATTEMPTS,required=true"`
+	Timeout                time.Duration `env:"TIMEOUT,required=true"`
+	QuietPeriod            time.Duration `env:"QUIET_PERIOD,required=true"`
+	GossipTime             time.Duration `env:"GOSSIP_TIME,required=true"`
+	LogLevel               string        `env:"LOG_LEVEL,default=INFO"`
+}
+
+
+// ===== internal/robot/robot.go =====
+
+package robot
+
+import (
+	"context"
+	"github.com/samber/lo"
+	"log/slog"
+	"math/rand"
+	"robots/internal/conf"
+	robotpb "robots/proto/pb-go"
+	"sort"
+	"strings"
+	"time"
+)
+
+type ISecretManager interface {
+	SplitSecret(word string) []string
+	CreateRobots(words []string) []Robot
+	FindSecret(ctx context.Context, robots []Robot)
+	StartGossip(ctx context.Context, robot *Robot, robots []Robot)
+	ProcessSummary(ctx context.Context, robot *Robot)
+	SuperviseRobot(ctx context.Context, robot *Robot, winner chan Robot)
+	ExchangeMessage(ctx context.Context, sender, receiver *Robot)
+	WriteSecret(winner chan Robot)
+}
+
+// SecretManager TODO à enlever
+type SecretManager struct {
+	Config conf.Config
+	Log    *slog.Logger
+}
+
+// Robot GossipSummary and GossipUpdate have to be inside the robot
+// Because at any moment robot exchange with others
+// They should have their own snapshot
+type Robot struct {
+	ID            int // Index of the robots
+	SecretParts   []SecretPart
+	GossipSummary chan []byte // Represents a channel of current indexes of robots
+	GossipUpdate  chan []byte // Represents a channel of missing secretParts
+	LastUpdatedAt time.Time   // Necessary to know if no words have been received since a long time
+}
+
+// SecretPart Represents a word and the position from the secret
+type SecretPart struct {
+	Index int // Index of the word
+	Word  string
+}
+
+func ChooseRobot(current *Robot, robots []*Robot) *Robot {
+	var receiver *Robot
+	for {
+		receiver = robots[rand.Intn(len(robots))]
+		if receiver.ID != current.ID {
+			break
+		}
+	}
+	return receiver
+}
+
+func (r *Robot) updateSecretParts(secretPart SecretPart) {
+	r.SecretParts = append(r.SecretParts, secretPart)
+}
+
+func (r *Robot) Indexes() []int64 {
+	return lo.Map(r.SecretParts, func(item SecretPart, index int) int64 {
+		return int64(item.Index)
+	})
+}
+
+// GetWordsToSend retourne tous les mots que le destinataire n'a pas encore
+func (r *Robot) GetWordsToSend(receiverIndexes []int) []SecretPart {
+	var missing []SecretPart
+	for _, sp := range r.SecretParts {
+		if !lo.Contains(receiverIndexes, sp.Index) {
+			missing = append(missing, sp)
+		}
+	}
+	return missing
+}
+
+// GetWords Returns words contained in the robot
+// Can be ordered or unordered by index of the initial secret
+func (r *Robot) GetWords(ordered bool) []string {
+	parts := r.SecretParts
+	if ordered {
+		tmp := make([]SecretPart, len(parts))
+		copy(tmp, parts)
+		sort.Slice(tmp, func(i, j int) bool {
+			return tmp[i].Index < tmp[j].Index
+		})
+		parts = tmp
+	}
+	return lo.Map(parts, func(p SecretPart, _ int) string {
+		return p.Word
+	})
+}
+
+func (r *Robot) BuildSecret() string {
+	return strings.Join(r.GetWords(true), " ")
+}
+
+// SplitSecret Initial sentences split into words
+func (s SecretManager) SplitSecret(word string) []string {
+	return strings.Fields(word)
+}
+
+// CreateRobots Randomly assign words to n robots
+// Each of the contains word with indexes
+func (s SecretManager) CreateRobots(words []string) []*Robot {
+	robots := make([]*Robot, s.Config.NbrOfRobots)
+	for i := 0; i < s.Config.NbrOfRobots; i++ {
+		robots[i] = &Robot{
+			ID:            i,
+			SecretParts:   []SecretPart{},
+			GossipSummary: make(chan []byte, s.Config.BufferSize),
+			GossipUpdate:  make(chan []byte, s.Config.BufferSize),
+			LastUpdatedAt: time.Now().UTC(),
+		}
+	}
+
+	for index, word := range words {
+		key := rand.Intn(s.Config.NbrOfRobots)
+		secretPart := SecretPart{Index: index, Word: word}
+		robots[key].SecretParts = append(robots[key].SecretParts, secretPart)
+	}
+	return robots
+}
+
+func ContainsIndex(secretParts []SecretPart, index int) bool {
+	return lo.ContainsBy(secretParts, func(item SecretPart) bool {
+		return item.Index == index
+	})
+}
+
+// IsSecretCompleted Verify if a word contains a "."
+func (r *Robot) IsSecretCompleted(endOfSecret string) bool {
+	// On vérifie si le dernier mot a le point et si on a le nombre total de mots
+	// On suppose que SecretParts sont indexés de 0 à len(secret)-1
+	words := r.GetWords(true)
+	if len(words) == 0 {
+		return false
+	}
+	lastWord := words[len(words)-1]
+	return strings.HasSuffix(lastWord, endOfSecret)
+}
+
+func FromSecretPartsPb(secretPartsPb []*robotpb.SecretPart) []SecretPart {
+	return lo.Map(secretPartsPb, func(item *robotpb.SecretPart, _ int) SecretPart {
+		return SecretPart{Index: int(item.Index), Word: item.Word}
+	})
+}
+
+func ToSecretPartsPb(secretParts []SecretPart) []*robotpb.SecretPart {
+	return lo.Map(secretParts, func(item SecretPart, _ int) *robotpb.SecretPart {
+		return &robotpb.SecretPart{
+			Index: int64(item.Index),
+			Word:  item.Word,
+		}
+	})
+}
+
+
+// ===== internal/supervisor/supervisor.go =====
+
+package supervisor
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+)
+
+// Worker doesn't protect itself
+// Can be silly, focused
+type Worker interface {
+	WithName(name string) Worker
+	GetName() string
+	Run(ctx context.Context) error
+}
+
+type ISupervisor interface {
+	Run()
+	Add(worker Worker) ISupervisor
+	Start(worker Worker)
+	Stop()
+}
+
+// Supervisor Own a context and a Cancel function
+// Run each worker in a goroutine
+// Check panics and errors
+// Restart workers automatically
+// Shutdown properly if parent context is canceled
+// Wait for the end of all goroutines via WaitGroup
+type Supervisor struct {
+	Ctx     context.Context    // To communicate a stop to all workers
+	Cancel  context.CancelFunc // To stop the context
+	wg      *sync.WaitGroup    // Wait for the end of goroutines
+	log     *slog.Logger
+	workers []Worker
+}
+
+func NewSupervisor(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup, log *slog.Logger) Supervisor {
+	return Supervisor{Ctx: ctx, Cancel: cancel, wg: wg, log: log}
+}
+
+func (s *Supervisor) Run() {
+	for _, worker := range s.workers {
+		s.Start(worker)
+	}
+}
+
+func (s *Supervisor) Add(worker Worker) ISupervisor {
+	s.workers = append(s.workers, worker)
+	return s
+}
+
+// Start Imagine une machine à laver (la goroutine superviseur) qui fait tourner des vêtements (les workers).
+// Si un vêtement explose (panic),
+// Tu l’attrapes sans casser la machine (recover)
+// Tu le remets dans la machine (restart Run)
+// Et la machine continue son cycle (la goroutine ne s’arrête pas).
+func (s *Supervisor) Start(worker Worker) {
+	s.wg.Add(1)
+
+	go func() {
+		defer s.wg.Done()
+
+		for {
+			if s.Ctx.Err() != nil {
+				s.log.Info(fmt.Sprintf("Stopping : %s", worker.GetName()))
+				return
+			}
+
+			// protection panic directement
+			err := func() (err error) {
+				defer func() {
+					if r := recover(); r != nil {
+						s.log.Error(fmt.Sprintf("Recovered panic in %s", worker.GetName()))
+						err = fmt.Errorf("panic")
+					}
+				}()
+				// Execute the children goroutine
+				// Restarted after a crash
+				// Not restarting the entire goroutine
+				return worker.Run(s.Ctx)
+			}()
+
+			if err == nil {
+				// Terminated properly, never restart !
+				s.log.Info(fmt.Sprintf("Worker finished : %s", worker.GetName()))
+				return
+			}
+
+			s.log.Info(fmt.Sprintf("Restarting : %s", worker.GetName()))
+			time.Sleep(200 * time.Millisecond)
+		}
+	}()
+}
+
+// Stop Cancel all goroutines listening channel for Ctx.Done
+// Supervisor will wait for all goroutines to finish
+func (s *Supervisor) Stop() {
+	s.Cancel()
+	s.wg.Wait()
+}
+
+
+// ===== pkg/workers/process_summary.go =====
+
+package workers
+
+import (
+	"context"
+	"fmt"
+	"github.com/golang/protobuf/proto"
+	"github.com/samber/lo"
+	"log/slog"
+	"robots/internal/conf"
+	"robots/internal/robot"
+	"robots/internal/supervisor"
+	robotpb "robots/proto/pb-go"
+)
+
+type ProcessSummaryWorker struct {
+	Config conf.Config
+	Log    *slog.Logger
+	Name   string
+	robot  *robot.Robot
+	Robots []*robot.Robot
+}
+
+func NewProcessSummaryWorker(config conf.Config, logger *slog.Logger, robot *robot.Robot, robots []*robot.Robot) ProcessSummaryWorker {
+	return ProcessSummaryWorker{Config: config, Log: logger, robot: robot, Robots: robots}
+}
+
+func (w ProcessSummaryWorker) WithName(name string) supervisor.Worker {
+	w.Name = name
+	return w
+}
+
+func (w ProcessSummaryWorker) GetName() string {
+	return w.Name
+}
+
+func (w ProcessSummaryWorker) Run(ctx context.Context) error {
+	for {
+		select {
+		case summaryMsg := <-w.robot.GossipSummary:
+			// On doit donc retourner les secretParts manquant
+			var gossipSummary robotpb.GossipSummary
+			if err := proto.Unmarshal(summaryMsg, &gossipSummary); err != nil {
+				w.Log.Info(fmt.Sprintf("Unable to decode proto message : %s", err.Error()))
+				continue
+			}
+			indexes := lo.Map(gossipSummary.Indexes, func(item int64, _ int) int {
+				return int(item)
+			})
+			secretParts := w.robot.GetWordsToSend(indexes)
+			msg, err := proto.Marshal(&robotpb.GossipUpdate{SecretParts: robot.ToSecretPartsPb(secretParts)})
+			if err != nil {
+				w.Log.Info(fmt.Sprintf("Unable to encode proto message : %s", err.Error()))
+				continue
+			}
+			// ⚠️ Don't forget to add a select case and default (not just writing)
+			// ⚠️ If the channel robot.GossipUpdate is slowly dequeued
+			// ⚠️ Can block the process
+			// Check if senderId exists
+			// Find the receiver
+			if gossipSummary.SenderId < 0 || int(gossipSummary.SenderId) > len(w.Robots) {
+				w.Log.Debug(fmt.Sprintf("Robot %d doesn't exist", gossipSummary.SenderId))
+				continue
+			}
+			receiver := w.Robots[gossipSummary.SenderId]
+			select {
+			case receiver.GossipUpdate <- msg:
+				// Successfully sent the message
+			default:
+				w.Log.Debug(fmt.Sprintf("Robot %d : buffer is full, message is ignored", w.robot.ID))
+			}
+		case <-ctx.Done():
+			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+			return nil
+		}
+	}
+}
+
+
+// ===== pkg/workers/start_gossip..go =====
+
+package workers
+
+import (
+	"context"
+	"fmt"
+	"github.com/golang/protobuf/proto"
+	"log/slog"
+	"math/rand"
+	"robots/internal/conf"
+	"robots/internal/robot"
+	"robots/internal/supervisor"
+	robotpb "robots/proto/pb-go"
+	"time"
+)
+
+type StartGossipWorker struct {
+	Config conf.Config
+	Log    *slog.Logger
+	Name   string
+	Robot  *robot.Robot
+	Robots []*robot.Robot
+}
+
+func NewStartGossipWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, robots []*robot.Robot) StartGossipWorker {
+	return StartGossipWorker{Config: config, Log: log, Robot: robot, Robots: robots}
+}
+
+func (w StartGossipWorker) WithName(name string) supervisor.Worker {
+	w.Name = name
+	return w
+}
+
+func (w StartGossipWorker) GetName() string {
+	return w.Name
+}
+
+func (w StartGossipWorker) Run(ctx context.Context) error {
+	ticker := time.NewTicker(w.Config.GossipTime)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			receiver := robot.ChooseRobot(w.Robot, w.Robots)
+			w.ExchangeMessage(ctx, w.Robot, receiver)
+		case <-ctx.Done():
+			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+			return nil
+		}
+	}
+}
+
+// ExchangeMessage r1 send a message to r2
+// Simulate lost and duplicated messages
+func (w StartGossipWorker) ExchangeMessage(ctx context.Context, sender, receiver *robot.Robot) {
+	if sender.ID == receiver.ID {
+		return
+	}
+	messageSent := 0
+	for i := 0; i < w.Config.MaxAttempts; i++ {
+		w.Log.Debug(fmt.Sprintf("Robot %d communicates with robot %d", sender.ID, receiver.ID))
+
+		// Calculate and simulate a random percentage
+		isSimulated := func(percentage int) bool {
+			return rand.Float32() < float32(percentage)/100.0
+		}
+
+		// Percentage of lost messages
+		if isSimulated(w.Config.PercentageOfLost) {
+			continue
+		}
+
+		// Percentage of duplicated messages
+		var times int
+		if isSimulated(w.Config.PercentageOfDuplicated) {
+			times = w.Config.DuplicatedNumber
+		}
+
+		for j := 0; j <= times; j++ {
+			// Sender sends his own indexes to receiver
+			gossipSender := robotpb.GossipSummary{Indexes: sender.Indexes(), SenderId: int32(sender.ID)}
+			msgSender, err := proto.Marshal(&gossipSender)
+			if err != nil {
+				w.Log.Info(fmt.Sprintf("Unable to encode proto message : %s", err.Error()))
+				continue
+			}
+			select {
+			case receiver.GossipSummary <- msgSender:
+				messageSent++
+			case <-ctx.Done():
+				w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+				return
+			default:
+			}
+		}
+	}
+}
+
+
+// ===== pkg/workers/supervise_robot.go =====
+
+package workers
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"robots/internal/conf"
+	"robots/internal/robot"
+	"robots/internal/supervisor"
+	"time"
+)
+
+// SuperviseRobotWorker
+// For each message merged with word
+// Check the secret has been completed
+// Only if no update since a chosen duration
+type SuperviseRobotWorker struct {
+	Config conf.Config
+	Log    *slog.Logger
+	Robot  *robot.Robot
+	Name   string
+	Winner chan robot.Robot
+}
+
+func NewSuperviseRobotWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, winner chan robot.Robot) SuperviseRobotWorker {
+	return SuperviseRobotWorker{Config: config, Log: log, Robot: robot, Winner: winner}
+}
+
+func (w SuperviseRobotWorker) WithName(name string) supervisor.Worker {
+	w.Name = name
+	return w
+}
+
+func (w SuperviseRobotWorker) GetName() string {
+	return w.Name
+}
+
+func (w SuperviseRobotWorker) Run(ctx context.Context) error {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			elapsed := w.Robot.LastUpdatedAt.Add(w.Config.QuietPeriod).Before(time.Now().UTC())
+			if elapsed && w.Robot.IsSecretCompleted(w.Config.EndOfSecret) {
+				// Send the winner in the channel without blocking any other possible winner
+				select {
+				case w.Winner <- *w.Robot:
+					w.Log.Info(fmt.Sprintf("Robot %d won", w.Robot.ID))
+					return nil
+				case <-ctx.Done():
+					w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+					return nil
+				default:
+					w.Log.Debug(fmt.Sprintf("Robot %d wanted to win but another one won", w.Robot.ID))
+				}
+			}
+		case <-ctx.Done():
+			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+			return nil
+		}
+	}
+}
+
+
+// ===== pkg/workers/update_worker.go =====
+
+package workers
+
+import (
+	"context"
+	"fmt"
+	"github.com/golang/protobuf/proto"
+	"log/slog"
+	"robots/internal/conf"
+	"robots/internal/robot"
+	"robots/internal/supervisor"
+	robotpb "robots/proto/pb-go"
+	"time"
+)
+
+// UpdateWorker Fetch all missing parts coming from anybody
+type UpdateWorker struct {
+	Config conf.Config
+	Log    *slog.Logger
+	Name   string
+	Robot  *robot.Robot
+}
+
+func NewUpdateWorker(config conf.Config, logger *slog.Logger, robot *robot.Robot) UpdateWorker {
+	return UpdateWorker{Config: config, Log: logger, Robot: robot}
+}
+
+func (w UpdateWorker) WithName(name string) supervisor.Worker {
+	w.Name = name
+	return w
+}
+
+func (w UpdateWorker) GetName() string {
+	return w.Name
+}
+
+func (w UpdateWorker) Run(ctx context.Context) error {
+	for {
+		select {
+		case updateMsg := <-w.Robot.GossipUpdate:
+			var gossipUpdate robotpb.GossipUpdate
+			err := proto.Unmarshal(updateMsg, &gossipUpdate)
+			if err != nil {
+				w.Log.Info(fmt.Sprintf("Unable to decode proto message : %s", err.Error()))
+				continue
+			}
+			secretParts := robot.FromSecretPartsPb(gossipUpdate.SecretParts)
+			for _, secretPart := range secretParts {
+				// Updating LastUpdatedAt if the word doesn't exist
+				if !robot.ContainsIndex(w.Robot.SecretParts, secretPart.Index) {
+					w.Robot.LastUpdatedAt = time.Now().UTC()
+					w.Robot.SecretParts = append(w.Robot.SecretParts, secretPart)
+					continue
+				}
+			}
+		case <-ctx.Done():
+			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+			return nil
+		}
+	}
+}
+
+
+// ===== pkg/workers/write_secret.go =====
+
+package workers
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+	"robots/internal/conf"
+	"robots/internal/robot"
+	"robots/internal/supervisor"
+)
+
+// WriteSecretWorker Write the secret in a file
+type WriteSecretWorker struct {
+	Config conf.Config
+	Log    *slog.Logger
+	Name   string
+	winner chan robot.Robot
+}
+
+func (w WriteSecretWorker) WithName(name string) supervisor.Worker {
+	w.Name = name
+	return w
+}
+
+func (w WriteSecretWorker) GetName() string {
+	return w.Name
+}
+
+func NewWriteSecretWorker(config conf.Config, log *slog.Logger, winner chan robot.Robot) WriteSecretWorker {
+	return WriteSecretWorker{Config: config, Log: log, winner: winner}
+}
+
+func (w WriteSecretWorker) Run(ctx context.Context) error {
+	for {
+		select {
+		case rb := <-w.winner:
+			file, err := os.Create(w.Config.OutputFile)
+			if err != nil {
+				panic(err)
+			}
+			defer file.Close()
+			if _, err = file.WriteString(rb.BuildSecret()); err != nil {
+				panic(err)
+			}
+			w.Log.Info(fmt.Sprintf("Robot %d won and saved the message in file -> %s", rb.ID, w.Config.OutputFile))
+			return nil
+		case <-ctx.Done():
+			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+			return nil
+		}
+	}
+}

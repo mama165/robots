@@ -17,13 +17,13 @@ import (
 type SuperviseRobotWorker struct {
 	Config conf.Config
 	Log    *slog.Logger
-	robot  *robot.Robot
+	Robot  *robot.Robot
 	Name   string
-	winner chan robot.Robot
+	Winner chan robot.Robot
 }
 
 func NewSuperviseRobotWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, winner chan robot.Robot) SuperviseRobotWorker {
-	return SuperviseRobotWorker{Config: config, Log: log, robot: robot, winner: winner}
+	return SuperviseRobotWorker{Config: config, Log: log, Robot: robot, Winner: winner}
 }
 
 func (w SuperviseRobotWorker) WithName(name string) supervisor.Worker {
@@ -42,18 +42,18 @@ func (w SuperviseRobotWorker) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ticker.C:
-			elapsed := w.robot.LastUpdatedAt.Add(w.Config.QuietPeriod).Before(time.Now().UTC())
-			if elapsed && w.robot.IsSecretCompleted(w.Config.EndOfSecret) {
+			elapsed := w.Robot.LastUpdatedAt.Add(w.Config.QuietPeriod).Before(time.Now().UTC())
+			if elapsed && w.Robot.IsSecretCompleted(w.Config.EndOfSecret) {
 				// Send the winner in the channel without blocking any other possible winner
 				select {
-				case w.winner <- *w.robot:
-					w.Log.Info(fmt.Sprintf("Robot %d won", w.robot.ID))
+				case w.Winner <- *w.Robot:
+					w.Log.Info(fmt.Sprintf("Robot %d won", w.Robot.ID))
 					return nil
 				case <-ctx.Done():
 					w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
 					return nil
 				default:
-					w.Log.Debug(fmt.Sprintf("Robot %d wanted to win but another one won", w.robot.ID))
+					w.Log.Debug(fmt.Sprintf("Robot %d wanted to win but another one won", w.Robot.ID))
 				}
 			}
 		case <-ctx.Done():

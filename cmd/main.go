@@ -40,10 +40,10 @@ func main() {
 	// Running two goroutines for each robot to start
 	for _, robot := range robots {
 		supervisor.
-			Add(workers.NewProcessSummaryWorker(config, log, &robot).WithName("summary worker")).
-			Add(workers.NewUpdateWorker(config, log, &robot).WithName("update worker")).
-			Add(workers.NewSuperviseRobotWorker(config, log, &robot, winner).WithName("supervise robot worker")).
-			Add(workers.NewStartGossipWorker(config, log, &robot, robots).WithName("start gossip worker"))
+			Add(workers.NewProcessSummaryWorker(config, log, robot, robots).WithName("summary worker")).
+			Add(workers.NewUpdateWorker(config, log, robot).WithName("update worker")).
+			Add(workers.NewSuperviseRobotWorker(config, log, robot, winner).WithName("supervise robot worker")).
+			Add(workers.NewStartGossipWorker(config, log, robot, robots).WithName("start gossip worker"))
 	}
 	// Only the winner goroutine handle the writing
 	supervisor.Add(workers.NewWriteSecretWorker(config, log, winner).WithName("write secret worker"))
