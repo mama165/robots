@@ -9,7 +9,6 @@ import (
 	"robots/internal/robot"
 	"robots/internal/supervisor"
 	robotpb "robots/proto/pb-go"
-	"time"
 )
 
 // UpdateWorker Fetch all missing parts coming from anybody
@@ -33,6 +32,19 @@ func (w UpdateWorker) GetName() string {
 	return w.Name
 }
 
+// Run processes incoming GossipUpdate messages for a robot.
+// Responsibilities:
+// - Merge new SecretParts into the robot's state.
+// - Update LastUpdatedAt when new parts are added.
+// Invariant enforcement:
+// - Monotonicity: robot never loses a SecretPart.
+// - Uniqueness: each index maps to exactly one word; conflicting parts trigger panic.
+// - Duplicate messages with the same word are ignored (idempotence).
+// Resilience:
+// - Runs until context cancellation (timeout or CTRL+C).
+// - Panics are caught by the Supervisor and the worker is restarted.
+// This worker ensures the robot's local state grows correctly and consistently,
+// enabling the gossip protocol to achieve eventual convergence.
 func (w UpdateWorker) Run(ctx context.Context) error {
 	for {
 		select {
@@ -44,13 +56,13 @@ func (w UpdateWorker) Run(ctx context.Context) error {
 				continue
 			}
 			secretParts := robot.FromSecretPartsPb(gossipUpdate.SecretParts)
+			before := len(w.Robot.SecretParts)
 			for _, secretPart := range secretParts {
-				// Updating LastUpdatedAt if the word doesn't exist
-				if !robot.ContainsIndex(w.Robot.SecretParts, secretPart.Index) {
-					w.Robot.LastUpdatedAt = time.Now().UTC()
-					w.Robot.SecretParts = append(w.Robot.SecretParts, secretPart)
-					continue
-				}
+				w.Robot.MergeSecretPart(secretPart)
+			}
+			after := len(w.Robot.SecretParts)
+			if after <= before {
+				panic("INVARIANT VIOLATION: secret parts count decreased")
 			}
 		case <-ctx.Done():
 			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")

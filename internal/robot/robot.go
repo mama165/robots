@@ -57,12 +57,8 @@ func ChooseRobot(current *Robot, robots []*Robot) *Robot {
 	return receiver
 }
 
-func (r *Robot) updateSecretParts(secretPart SecretPart) {
-	r.SecretParts = append(r.SecretParts, secretPart)
-}
-
 func (r *Robot) Indexes() []int64 {
-	return lo.Map(r.SecretParts, func(item SecretPart, index int) int64 {
+	return lo.Map(r.SecretParts, func(item SecretPart, _ int) int64 {
 		return int64(item.Index)
 	})
 }
@@ -126,9 +122,33 @@ func (s SecretManager) CreateRobots(words []string) []*Robot {
 	return robots
 }
 
-func ContainsIndex(secretParts []SecretPart, index int) bool {
-	return lo.ContainsBy(secretParts, func(item SecretPart) bool {
-		return item.Index == index
+// MergeSecretPart merges a secret part into the robot's local state.
+// Invariants enforced:
+// - Monotonicity: secret parts are never removed.
+// - Uniqueness: a given index can map to only one word.
+// - Idempotence: receiving the same (index, word) multiple times has no effect.
+// Behavior:
+// - If the index already exists with a different word, this is a fatal invariant violation and triggers a panic.
+// - If the index already exists with the same word, the update is ignored.
+// - If the part is new, it is appended and LastUpdatedAt is refreshed.
+//
+// This method is the single entry point for mutating SecretParts
+// and acts as the consistency boundary of the Robot.
+func (r *Robot) MergeSecretPart(secretPart SecretPart) {
+	part, ok := FindSecretPart(r.SecretParts, secretPart)
+	if ok && part.Word != secretPart.Word {
+		panic("invariant violation: same index, different word")
+	}
+	if ok {
+		return
+	}
+	r.LastUpdatedAt = time.Now().UTC()
+	r.SecretParts = append(r.SecretParts, secretPart)
+}
+
+func FindSecretPart(secretParts []SecretPart, secretPart SecretPart) (SecretPart, bool) {
+	return lo.Find(secretParts, func(item SecretPart) bool {
+		return item.Index == secretPart.Index
 	})
 }
 

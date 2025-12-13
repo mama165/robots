@@ -40,8 +40,9 @@ func (w StartGossipWorker) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ticker.C:
-			receiver := robot.ChooseRobot(w.Robot, w.Robots)
-			w.ExchangeMessage(ctx, w.Robot, receiver)
+			sender := w.Robot
+			receiver := robot.ChooseRobot(sender, w.Robots)
+			w.ExchangeMessage(ctx, sender, receiver)
 		case <-ctx.Done():
 			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
 			return nil
