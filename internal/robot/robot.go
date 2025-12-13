@@ -126,9 +126,9 @@ func (s SecretManager) CreateRobots(words []string) []*Robot {
 	return robots
 }
 
-func ContainsIndex(secretParts []SecretPart, index int) bool {
+func HasSecretPart(secretParts []SecretPart, secretPart SecretPart) bool {
 	return lo.ContainsBy(secretParts, func(item SecretPart) bool {
-		return item.Index == index
+		return item.Index == secretPart.Index
 	})
 }
 
