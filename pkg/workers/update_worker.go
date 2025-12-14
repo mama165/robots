@@ -61,7 +61,7 @@ func (w UpdateWorker) Run(ctx context.Context) error {
 				w.Robot.MergeSecretPart(secretPart)
 			}
 			after := len(w.Robot.SecretParts)
-			if after <= before {
+			if after < before {
 				panic("INVARIANT VIOLATION: secret parts count decreased")
 			}
 		case <-ctx.Done():

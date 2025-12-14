@@ -25,10 +25,10 @@ func main() {
 		panic(err)
 	}
 
-	ctx := context.Background()
-	ctx, cancel := context.WithTimeout(ctx, config.Timeout)
+	baseCtx := context.Background()
+	timeoutCtx, cancel := context.WithTimeout(baseCtx, config.Timeout)
+	ctx, stop := signal.NotifyContext(timeoutCtx, syscall.SIGINT) // Handle CTRL+C
 	defer cancel()
-	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT) // Handle CTRL+C
 	defer stop()
 	secretManager := rb.SecretManager{Config: config, Log: log}
 	secret := secretManager.SplitSecret(config.Secret)

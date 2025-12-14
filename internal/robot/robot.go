@@ -152,16 +152,36 @@ func FindSecretPart(secretParts []SecretPart, secretPart SecretPart) (SecretPart
 	})
 }
 
-// IsSecretCompleted Verify if a word contains a "."
+// IsSecretCompleted reports whether the robot has fully reconstructed the secret.
+// The secret is considered complete if:
+// - all indexes from 0 to the highest index are present (no gaps),
+// - and the last word ends with the given end-of-secret marker.
+// This prevents false positives caused by partial, unordered, or duplicated gossip messages.
 func (r *Robot) IsSecretCompleted(endOfSecret string) bool {
-	// On vérifie si le dernier mot a le point et si on a le nombre total de mots
-	// On suppose que SecretParts sont indexés de 0 à len(secret)-1
-	words := r.GetWords(true)
-	if len(words) == 0 {
+	parts := r.SecretParts
+	if len(parts) == 0 {
 		return false
 	}
-	lastWord := words[len(words)-1]
-	return strings.HasSuffix(lastWord, endOfSecret)
+
+	maxIndex := -1
+	indexes := make(map[int]struct{}, len(parts))
+	for _, p := range parts {
+		indexes[p.Index] = struct{}{}
+		if p.Index > maxIndex {
+			maxIndex = p.Index
+		}
+	}
+
+	// Check all indexes are present
+	for i := 0; i <= maxIndex; i++ {
+		if _, ok := indexes[i]; !ok {
+			return false // Missing word !
+		}
+	}
+
+	// Check end marker
+	words := r.GetWords(true)
+	return strings.HasSuffix(words[len(words)-1], endOfSecret)
 }
 
 func FromSecretPartsPb(secretPartsPb []*robotpb.SecretPart) []SecretPart {

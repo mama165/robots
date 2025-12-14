@@ -91,6 +91,7 @@ func (w StartGossipWorker) ExchangeMessage(ctx context.Context, sender, receiver
 				w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
 				return
 			default:
+				w.Log.Debug(fmt.Sprintf("Robot %d : buffer is full, message is ignored", receiver.ID))
 			}
 		}
 	}

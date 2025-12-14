@@ -57,7 +57,7 @@ func (w ProcessSummaryWorker) Run(ctx context.Context) error {
 			// ⚠️ Can block the process
 			// Check if senderId exists
 			// Find the receiver
-			if gossipSummary.SenderId < 0 || int(gossipSummary.SenderId) > len(w.Robots) {
+			if gossipSummary.SenderId < 0 || int(gossipSummary.SenderId) >= len(w.Robots) {
 				w.Log.Debug(fmt.Sprintf("Robot %d doesn't exist", gossipSummary.SenderId))
 				continue
 			}
