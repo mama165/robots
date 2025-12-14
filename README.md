@@ -2,10 +2,10 @@
 
 This project is a **distributed systems simulation** where multiple autonomous robots collaborate to reconstruct a shared secret using a **gossip / anti-entropy protocol**.
 
-Each robot initially holds **only a subset of the secret**, split into indexed words.
+Each robot initially holds **only a subset of the secret**, split into indexed words.  
 Through unreliable, asynchronous communication, robots progressively exchange missing information until **one robot eventually reconstructs the full secret** and writes it to disk.
 
-This project is not a chat, not an HTTP API, and not a CRUD service.
+This project is **not** a chat, **not** an HTTP API, and **not** a CRUD service.  
 It is a **laboratory for reasoning about distributed systems behavior**.
 
 ---
@@ -28,13 +28,60 @@ It demonstrates how **eventual consistency** can be achieved despite:
 * concurrent execution
 * partial knowledge
 
-This kind of pattern is commonly found in:
+This pattern is commonly found in:
 
 * gossip protocols
 * monitoring agents (e.g. Datadog-like agents)
 * peer-to-peer systems
 * distributed caches
 * CRDT-based systems
+
+---
+
+## 🧩 High-Level Architecture
+
+Each robot is an **independent concurrent system** composed of multiple workers.
+Robots **never share memory** and only communicate through **asynchronous message passing**.
+
+### Robot internal workers
+
+Each robot runs the following goroutines:
+
+#### 1. Gossip Sender Worker
+* Periodically selects another robot at random
+* Sends a `GossipSummary` containing:
+   * the indexes it already knows
+   * its own robot ID
+* Messages may be:
+   * dropped
+   * duplicated
+   * rejected due to buffer saturation
+
+#### 2. Summary Processor (Anti-Entropy Worker)
+* Receives a `GossipSummary`
+* Computes which secret parts the sender is missing
+* Replies with a `GossipUpdate`
+* Implements **anti-entropy reconciliation**
+
+#### 3. Update Processor Worker
+* Receives `GossipUpdate` messages
+* Merges secret parts into local state
+* Enforces **strong invariants** via a single merge function
+
+#### 4. Supervisor Worker
+* Observes robot state evolution
+* Detects:
+   * full secret reconstruction
+   * quiescence (no recent updates)
+* Handles panics from invariant violations
+* Restarts failed workers when needed
+
+All workers:
+* run concurrently
+* communicate via buffered channels
+* can be stopped via context cancellation
+
+There is **no global coordinator**.
 
 ---
 
@@ -49,7 +96,7 @@ A robot **never forgets** a word once learned.
 * No overwrite
 * No rollback
 
-This guarantees **convergence**.
+This guarantees **eventual convergence**.
 
 ---
 
@@ -73,7 +120,7 @@ Result:
 
 ### 3. Order Independence
 
-Internally, secret parts are stored **unordered**.
+Internally, secret parts are stored **unordered**.  
 Ordering is applied **only at read time**, based on word indexes.
 
 This cleanly separates:
@@ -99,118 +146,112 @@ This mirrors real-world distributed systems where locks do not scale.
 
 ---
 
-## 🔒 Invariant Enforcement
+## 🔒 Invariant Enforcement & Consistency Boundary
 
-Robots explicitly enforce core consistency invariants at runtime.
+All mutations of a robot’s local state go through a **single consistency boundary**:
 
-All mutations of a robot’s local state go through a single merge operation which guarantees:
+**MergeSecretPart()** function guarantees:
 
-* Monotonic state growth (secret parts are never removed)
-* Index → word immutability
-* Idempotent message handling
+* monotonic state growth
+* index → word immutability
+* idempotent updates
 
-Receiving conflicting data for the same index is considered a **programming error** and triggers a panic.
-Such panics are caught by the supervisor, logged, and cause the affected worker to be restarted.
+If conflicting data is received for the same index, the program **panics deliberately**.
 
-This ensures the system **tolerates external unreliability** while **refusing internal corruption**.
+Such panics are:
+* caught by the supervisor
+* logged
+* followed by a worker restart
+
+This models **fail-fast correctness** inside an unreliable environment.
 
 ---
 
-## 📡 Gossip & Anti-Entropy Mechanism
+## 📡 Gossip & Anti-Entropy Protocol
 
-The communication protocol is intentionally simple:
+The protocol follows a classic anti-entropy pattern:
 
-1. A robot periodically selects another robot at random
-2. It sends a **GossipSummary** containing:
+1. A robot selects a random peer
+2. Sends a summary of known indexes
+3. The peer computes missing parts
+4. Sends back updates
+5. The sender merges new information
 
-   * the indexes it already knows
-   * its own sender ID
-3. The receiver computes the **missing parts**
-4. It replies with a **GossipUpdate**
-5. The sender merges new information (if any)
+This exchange is:
 
-This is a classic **anti-entropy exchange**.
+* asynchronous
+* unordered
+* lossy
+* idempotent
+
+Yet it converges.
 
 ---
 
 ## ⚠️ Failure Modes Simulated
 
-The system explicitly simulates real-world failures:
-
 | Failure Type        | Description                         |
-| ------------------- | ----------------------------------- |
+|--------------------|-------------------------------------|
 | Message loss        | Messages may be randomly dropped    |
 | Message duplication | Messages may be sent multiple times |
 | Buffer saturation   | Channels may reject messages        |
-| Unordered delivery  | No delivery ordering guarantees     |
-| Concurrency         | All robots run independently        |
-
-Despite this, the system still converges.
+| Unordered delivery  | No ordering guarantees              |
+| Concurrency         | Independent goroutines per robot    |
 
 ---
 
-## 🕰️ Completion Detection Strategy
+## 🕰️ Completion & Stability Detection
 
 A robot is considered a winner when:
 
-* It has reconstructed the **full secret**
-* No new updates have been received for a configurable **quiet period**
+* it has reconstructed the **full secret**
+* no updates were received for a configurable **quiet period**
 
-This avoids false positives and models **eventual quiescence** instead of instant completion.
+Time is used **only as a stability heuristic**, not as a correctness mechanism.
 
 ---
 
 ## 🏆 Winner Selection
 
-Multiple robots *may* reach a complete state.
+Multiple robots may reach completion.
 
 To avoid race conditions:
 
 * a non-blocking winner channel is used
-* only the first robot successfully publishes itself
-* others gracefully stop
+* only the first robot succeeds
+* others stop gracefully
 
-The winner writes the reconstructed secret to a file.
+The winner writes the reconstructed secret to disk.
 
 ---
 
-## 🚫 What this project deliberately does NOT solve
+## 🚫 Explicitly Out of Scope
 
 * Byzantine behavior
-* Network partitions with permanent isolation
+* Permanent partitions
 * Security / authentication
-* Persistent storage across restarts
-* Clock synchronization (physical time)
-
-These are intentionally excluded to keep the focus sharp.
+* Persistence across restarts
+* Clock synchronization guarantees
 
 ---
 
 ## 🔮 Possible Extensions
 
-This project is designed to be extended:
-
-* Lamport logical clocks
+* Logical clocks (Lamport / vector)
 * Message IDs and explicit deduplication
-* Heartbeat & failure suspicion
+* Failure suspicion
 * Metrics & observability
-* CRDT-based state representation
-* Alternative payloads (chat messages, media chunks)
-* Different transport layers (WebRTC, QUIC, BLE)
-
-The core engine remains the same.
+* CRDT-based state
+* Alternative payloads
+* Other transports (QUIC, BLE, WebRTC)
 
 ---
 
 ## 📦 Protobuf Code Generation
 
-The `.proto` files are located in the `/proto` directory.
+Proto files are located in `/proto`.
 
-To generate Go code on **Windows, Linux or macOS**, run the following command
-from the **project root**:
-
-> **IMPORTANT:** The command must be executed from the project root.
+Generate Go code from the project root:
 
 ```bash
 docker run --rm -v "${PWD}/proto:/defs" namely/protoc-go ls /defs/proto
-```
