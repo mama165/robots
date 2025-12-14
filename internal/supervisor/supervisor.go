@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"robots/pkg/errors"
 	"sync"
 	"time"
 )
@@ -18,7 +19,7 @@ type Worker interface {
 
 type ISupervisor interface {
 	Run()
-	Add(worker Worker) ISupervisor
+	Add(worker ...Worker) ISupervisor
 	Start(worker Worker)
 	Stop()
 }
@@ -47,8 +48,8 @@ func (s *Supervisor) Run() {
 	}
 }
 
-func (s *Supervisor) Add(worker Worker) ISupervisor {
-	s.workers = append(s.workers, worker)
+func (s *Supervisor) Add(worker ...Worker) ISupervisor {
+	s.workers = append(s.workers, worker...)
 	return s
 }
 
@@ -74,7 +75,7 @@ func (s *Supervisor) Start(worker Worker) {
 				defer func() {
 					if r := recover(); r != nil {
 						s.log.Error(fmt.Sprintf("Recovered panic in %s", worker.GetName()))
-						err = fmt.Errorf("panic")
+						err = errors.ErrWorkerPanic
 					}
 				}()
 				// Execute the children goroutine

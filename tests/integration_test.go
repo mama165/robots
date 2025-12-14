@@ -2,14 +2,16 @@ package tests
 
 import (
 	"context"
-	"github.com/mama165/sdk-go/logs"
-	"github.com/stretchr/testify/assert"
 	"log/slog"
 	"robots/internal/conf"
 	"robots/internal/robot"
+	"robots/pkg/events"
 	"robots/pkg/workers"
 	"testing"
 	"time"
+
+	"github.com/mama165/sdk-go/logs"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestWorkerGossip_Robustness(t *testing.T) {
@@ -37,6 +39,7 @@ func TestWorkerGossip_Robustness(t *testing.T) {
 	words := []string{"hello", "world."}
 	sm := robot.SecretManager{Config: cfg}
 	robots := sm.CreateRobots(words)
+	event := make(chan events.Event, 100)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -45,15 +48,15 @@ func TestWorkerGossip_Robustness(t *testing.T) {
 	for _, r := range robots {
 		r := r // Capture local variable for goroutine
 		go func() {
-			err := workers.NewUpdateWorker(cfg, logger, r).Run(ctx)
+			err := workers.NewMergeSecretWorker(logger, r, event).Run(ctx)
 			ass.NoError(err)
 		}()
 		go func() {
-			err := workers.NewProcessSummaryWorker(cfg, logger, r, robots).Run(ctx)
+			err := workers.NewProcessSummaryWorker(logger, r, robots, event).Run(ctx)
 			ass.NoError(err)
 		}()
 		go func() {
-			err := workers.NewStartGossipWorker(cfg, logger, r, robots).Run(ctx)
+			err := workers.NewStartGossipWorker(cfg, logger, r, robots, event).Run(ctx)
 			ass.NoError(err)
 		}()
 	}

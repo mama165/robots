@@ -3,14 +3,16 @@ package workers
 import (
 	"context"
 	"fmt"
-	"github.com/golang/protobuf/proto"
 	"log/slog"
 	"math/rand"
 	"robots/internal/conf"
 	"robots/internal/robot"
 	"robots/internal/supervisor"
+	"robots/pkg/events"
 	robotpb "robots/proto/pb-go"
 	"time"
+
+	"github.com/golang/protobuf/proto"
 )
 
 type StartGossipWorker struct {
@@ -19,10 +21,11 @@ type StartGossipWorker struct {
 	Name   string
 	Robot  *robot.Robot
 	Robots []*robot.Robot
+	Event  chan events.Event
 }
 
-func NewStartGossipWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, robots []*robot.Robot) StartGossipWorker {
-	return StartGossipWorker{Config: config, Log: log, Robot: robot, Robots: robots}
+func NewStartGossipWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, robots []*robot.Robot, event chan events.Event) StartGossipWorker {
+	return StartGossipWorker{Config: config, Log: log, Robot: robot, Robots: robots, Event: event}
 }
 
 func (w StartGossipWorker) WithName(name string) supervisor.Worker {
@@ -91,7 +94,7 @@ func (w StartGossipWorker) ExchangeMessage(ctx context.Context, sender, receiver
 				w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
 				return
 			default:
-				w.Log.Debug(fmt.Sprintf("Robot %d : buffer is full, message is ignored", receiver.ID))
+				w.Log.Debug("StartGossip channel is full, dropping message")
 			}
 		}
 	}

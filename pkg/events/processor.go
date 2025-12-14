@@ -1,0 +1,9 @@
+package events
+
+// Processor
+// Each kind of event has his own processor
+// Based on the Chain of responsibility pattern
+type Processor interface {
+	CanProcess(event Event) bool
+	Process(event Event) error
+}

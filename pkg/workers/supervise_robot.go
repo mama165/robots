@@ -7,6 +7,7 @@ import (
 	"robots/internal/conf"
 	"robots/internal/robot"
 	"robots/internal/supervisor"
+	"robots/pkg/events"
 	"time"
 )
 
@@ -20,10 +21,11 @@ type SuperviseRobotWorker struct {
 	Robot  *robot.Robot
 	Name   string
 	Winner chan robot.Robot
+	Event  chan events.Event
 }
 
-func NewSuperviseRobotWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, winner chan robot.Robot) SuperviseRobotWorker {
-	return SuperviseRobotWorker{Config: config, Log: log, Robot: robot, Winner: winner}
+func NewSuperviseRobotWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, winner chan robot.Robot, event chan events.Event) SuperviseRobotWorker {
+	return SuperviseRobotWorker{Config: config, Log: log, Robot: robot, Winner: winner, Event: event}
 }
 
 func (w SuperviseRobotWorker) WithName(name string) supervisor.Worker {
@@ -53,6 +55,7 @@ func (w SuperviseRobotWorker) Run(ctx context.Context) error {
 					w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
 					return nil
 				default:
+					// TODO on envoie un event ici aussi ?
 					w.Log.Debug(fmt.Sprintf("Robot %d wanted to win but another one won", w.Robot.ID))
 				}
 			}

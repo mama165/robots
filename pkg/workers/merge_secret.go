@@ -3,32 +3,34 @@ package workers
 import (
 	"context"
 	"fmt"
-	"github.com/golang/protobuf/proto"
 	"log/slog"
-	"robots/internal/conf"
 	"robots/internal/robot"
 	"robots/internal/supervisor"
+	"robots/pkg/events"
 	robotpb "robots/proto/pb-go"
+	"time"
+
+	"github.com/golang/protobuf/proto"
 )
 
-// UpdateWorker Fetch all missing parts coming from anybody
-type UpdateWorker struct {
-	Config conf.Config
-	Log    *slog.Logger
-	Name   string
-	Robot  *robot.Robot
+// MergeSecretWorker Fetch all missing parts coming from anybody
+type MergeSecretWorker struct {
+	Log   *slog.Logger
+	Name  string
+	Robot *robot.Robot
+	Event chan events.Event
 }
 
-func NewUpdateWorker(config conf.Config, logger *slog.Logger, robot *robot.Robot) UpdateWorker {
-	return UpdateWorker{Config: config, Log: logger, Robot: robot}
+func NewMergeSecretWorker(logger *slog.Logger, robot *robot.Robot, event chan events.Event) MergeSecretWorker {
+	return MergeSecretWorker{Log: logger, Robot: robot, Event: event}
 }
 
-func (w UpdateWorker) WithName(name string) supervisor.Worker {
+func (w MergeSecretWorker) WithName(name string) supervisor.Worker {
 	w.Name = name
 	return w
 }
 
-func (w UpdateWorker) GetName() string {
+func (w MergeSecretWorker) GetName() string {
 	return w.Name
 }
 
@@ -45,7 +47,7 @@ func (w UpdateWorker) GetName() string {
 // - Panics are caught by the Supervisor and the worker is restarted.
 // This worker ensures the robot's local state grows correctly and consistently,
 // enabling the gossip protocol to achieve eventual convergence.
-func (w UpdateWorker) Run(ctx context.Context) error {
+func (w MergeSecretWorker) Run(ctx context.Context) error {
 	for {
 		select {
 		case updateMsg := <-w.Robot.GossipUpdate:
@@ -62,7 +64,14 @@ func (w UpdateWorker) Run(ctx context.Context) error {
 			}
 			after := len(w.Robot.SecretParts)
 			if after < before {
-				panic("INVARIANT VIOLATION: secret parts count decreased")
+				select {
+				case w.Event <- events.Event{
+					EventType: events.EventInvariantViolation,
+					CreatedAt: time.Time{},
+					Payload: events.InvariantViolationEvent{WorkerName: w.GetName(),
+					}}:
+					panic("INVARIANT VIOLATION: secret parts count decreased")
+				}
 			}
 		case <-ctx.Done():
 			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")

@@ -2,13 +2,14 @@ package robot
 
 import (
 	"context"
-	"github.com/samber/lo"
 	"math/rand"
 	"robots/internal/conf"
 	robotpb "robots/proto/pb-go"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/samber/lo"
 )
 
 type ISecretManager interface {
@@ -22,10 +23,8 @@ type ISecretManager interface {
 	WriteSecret(winner chan Robot)
 }
 
-// SecretManager TODO à enlever
 type SecretManager struct {
 	Config conf.Config
-	//Log    *slog.Logger
 }
 
 // Robot GossipSummary and GossipUpdate have to be inside the robot

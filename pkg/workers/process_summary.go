@@ -6,22 +6,26 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/samber/lo"
 	"log/slog"
-	"robots/internal/conf"
 	"robots/internal/robot"
 	"robots/internal/supervisor"
+	"robots/pkg/events"
 	robotpb "robots/proto/pb-go"
 )
 
+// ProcessSummaryWorker handles incoming gossip summaries from other robots.
+// It tries to send the corresponding updates to the target robots without blocking.
+// If the receiver channel is full, the message is dropped to keep the system responsive.
+// Channel capacity can be monitored via metrics if needed.
 type ProcessSummaryWorker struct {
-	Config conf.Config
 	Log    *slog.Logger
 	Name   string
 	robot  *robot.Robot
 	Robots []*robot.Robot
+	Event  chan events.Event
 }
 
-func NewProcessSummaryWorker(config conf.Config, logger *slog.Logger, robot *robot.Robot, robots []*robot.Robot) ProcessSummaryWorker {
-	return ProcessSummaryWorker{Config: config, Log: logger, robot: robot, Robots: robots}
+func NewProcessSummaryWorker(logger *slog.Logger, robot *robot.Robot, robots []*robot.Robot, event chan events.Event) ProcessSummaryWorker {
+	return ProcessSummaryWorker{Log: logger, robot: robot, Robots: robots, Event: event}
 }
 
 func (w ProcessSummaryWorker) WithName(name string) supervisor.Worker {
@@ -37,7 +41,6 @@ func (w ProcessSummaryWorker) Run(ctx context.Context) error {
 	for {
 		select {
 		case summaryMsg := <-w.robot.GossipSummary:
-			// On doit donc retourner les secretParts manquant
 			var gossipSummary robotpb.GossipSummary
 			if err := proto.Unmarshal(summaryMsg, &gossipSummary); err != nil {
 				w.Log.Info(fmt.Sprintf("Unable to decode proto message : %s", err.Error()))
@@ -52,11 +55,6 @@ func (w ProcessSummaryWorker) Run(ctx context.Context) error {
 				w.Log.Info(fmt.Sprintf("Unable to encode proto message : %s", err.Error()))
 				continue
 			}
-			// ⚠️ Don't forget to add a select case and default (not just writing)
-			// ⚠️ If the channel robot.GossipUpdate is slowly dequeued
-			// ⚠️ Can block the process
-			// Check if senderId exists
-			// Find the receiver
 			if gossipSummary.SenderId < 0 || int(gossipSummary.SenderId) >= len(w.Robots) {
 				w.Log.Debug(fmt.Sprintf("Robot %d doesn't exist", gossipSummary.SenderId))
 				continue
@@ -64,9 +62,8 @@ func (w ProcessSummaryWorker) Run(ctx context.Context) error {
 			receiver := w.Robots[gossipSummary.SenderId]
 			select {
 			case receiver.GossipUpdate <- msg:
-				// Successfully sent the message
 			default:
-				w.Log.Debug(fmt.Sprintf("Robot %d : buffer is full, message is ignored", w.robot.ID))
+				w.Log.Debug("GossipUpdate channel is full, dropping message")
 			}
 		case <-ctx.Done():
 			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")

@@ -8,6 +8,7 @@ import (
 	"robots/internal/conf"
 	"robots/internal/robot"
 	"robots/internal/supervisor"
+	"robots/pkg/events"
 )
 
 // WriteSecretWorker Write the secret in a file
@@ -16,6 +17,11 @@ type WriteSecretWorker struct {
 	Log    *slog.Logger
 	Name   string
 	winner chan robot.Robot
+	Event  chan events.Event
+}
+
+func NewWriteSecretWorker(config conf.Config, log *slog.Logger, winner chan robot.Robot, event chan events.Event) WriteSecretWorker {
+	return WriteSecretWorker{Config: config, Log: log, winner: winner, Event: event}
 }
 
 func (w WriteSecretWorker) WithName(name string) supervisor.Worker {
@@ -25,10 +31,6 @@ func (w WriteSecretWorker) WithName(name string) supervisor.Worker {
 
 func (w WriteSecretWorker) GetName() string {
 	return w.Name
-}
-
-func NewWriteSecretWorker(config conf.Config, log *slog.Logger, winner chan robot.Robot) WriteSecretWorker {
-	return WriteSecretWorker{Config: config, Log: log, winner: winner}
 }
 
 func (w WriteSecretWorker) Run(ctx context.Context) error {
@@ -48,6 +50,8 @@ func (w WriteSecretWorker) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
 			return nil
+		default:
+			w.Log.Debug("WriteSecret channel is full, dropping message")
 		}
 	}
 }
