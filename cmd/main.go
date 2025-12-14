@@ -30,7 +30,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(timeoutCtx, syscall.SIGINT) // Handle CTRL+C
 	defer cancel()
 	defer stop()
-	secretManager := rb.SecretManager{Config: config, Log: log}
+	secretManager := rb.SecretManager{Config: config}
 	secret := secretManager.SplitSecret(config.Secret)
 	robots := secretManager.CreateRobots(secret)
 	winner := make(chan rb.Robot)

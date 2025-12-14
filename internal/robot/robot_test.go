@@ -137,3 +137,28 @@ func TestRobot_IsSecretCompleted(t *testing.T) {
 		})
 	}
 }
+
+func TestRobot_MergeSecretPart_Idempotence(t *testing.T) {
+	ass := assert.New(t)
+
+	r := &Robot{
+		ID:          0,
+		SecretParts: []SecretPart{},
+	}
+
+	part := SecretPart{Index: 0, Word: "hello"}
+
+	// Given Merging first time
+	r.MergeSecretPart(part)
+	ass.Equal(1, len(r.SecretParts))
+
+	// Given Merging the same part (idempotent)
+	r.MergeSecretPart(part)
+	ass.Equal(1, len(r.SecretParts))
+
+	// Given Merging a different part on the same index → panic expected
+	partConflict := SecretPart{Index: 0, Word: "world"}
+	ass.Panics(func() {
+		r.MergeSecretPart(partConflict)
+	})
+}

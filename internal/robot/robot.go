@@ -3,7 +3,6 @@ package robot
 import (
 	"context"
 	"github.com/samber/lo"
-	"log/slog"
 	"math/rand"
 	"robots/internal/conf"
 	robotpb "robots/proto/pb-go"
@@ -26,7 +25,7 @@ type ISecretManager interface {
 // SecretManager TODO à enlever
 type SecretManager struct {
 	Config conf.Config
-	Log    *slog.Logger
+	//Log    *slog.Logger
 }
 
 // Robot GossipSummary and GossipUpdate have to be inside the robot
