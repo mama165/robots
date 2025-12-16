@@ -2,7 +2,6 @@ package workers
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"robots/internal/conf"
 	"robots/internal/robot"
@@ -46,22 +45,26 @@ func (w SuperviseRobotWorker) Run(ctx context.Context) error {
 		case <-ticker.C:
 			elapsed := w.Robot.LastUpdatedAt.Add(w.Config.QuietPeriod).Before(time.Now().UTC())
 			if elapsed && w.Robot.IsSecretCompleted(w.Config.EndOfSecret) {
-				// Send the winner in the channel without blocking any other possible winner
-				select {
-				case w.Winner <- *w.Robot:
-					w.Log.Info(fmt.Sprintf("Robot %d won", w.Robot.ID))
-					return nil
-				case <-ctx.Done():
-					w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
-					return nil
-				default:
-					// TODO on envoie un event ici aussi ?
-					w.Log.Debug(fmt.Sprintf("Robot %d wanted to win but another one won", w.Robot.ID))
-				}
+				w.sendSecretWrittenEvent(ctx)
 			}
 		case <-ctx.Done():
 			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
 			return nil
 		}
+	}
+}
+
+// Send the winner in the channel without blocking any other possible winner
+func (w SuperviseRobotWorker) sendSecretWrittenEvent(ctx context.Context) {
+	select {
+	case w.Event <- events.Event{
+		EventType: events.EventSecretWritten,
+		CreatedAt: time.Now().UTC(),
+		Payload:   events.SecretWrittenEvent{Robot: *w.Robot},
+	}:
+	case <-ctx.Done():
+		w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+	default:
+		w.Log.Debug("Buffer is full")
 	}
 }

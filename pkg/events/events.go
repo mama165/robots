@@ -1,6 +1,7 @@
 package events
 
 import (
+	"robots/internal/robot"
 	"sync"
 	"time"
 )
@@ -52,6 +53,7 @@ type WinnerFoundEvent struct {
 }
 
 type SecretWrittenEvent struct {
+	Robot robot.Robot
 }
 
 type InvariantViolationEvent struct {
