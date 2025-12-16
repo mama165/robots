@@ -16,6 +16,6 @@ func (p StartGossipProcessor) CanProcess(event Event) bool {
 	return event.EventType == EventStartGossip
 }
 
-func (p StartGossipProcessor) Process(event Event) error {
+func (p StartGossipProcessor) Handle(event Event) error {
 	return nil
 }

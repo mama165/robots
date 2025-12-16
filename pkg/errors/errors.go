@@ -10,5 +10,6 @@ var (
 	ErrNegativePercentageOfDuplicated = fmt.Errorf("percentage of duplicated should be positive")
 	ErrNegativeDuplicatedNumber       = fmt.Errorf("duplicated number should be positive")
 	ErrNegativeMaxAttempts            = fmt.Errorf("max attempts should be positive")
+	ErrNegativeMetricInterval         = fmt.Errorf("metric interval should be positive")
 	ErrWorkerPanic                    = fmt.Errorf("worker panic")
 )

@@ -3,59 +3,58 @@ package workers
 import (
 	"context"
 	"log/slog"
+	"robots/internal/conf"
 	"robots/internal/supervisor"
 	"robots/pkg/events"
+	"time"
 )
 
+// MetricWorker periodically reports the current channel capacity and length.
+// Reading len(channel) and cap(channel) is non-blocking, so this won't interfere
+// with other goroutines. It's okay if an event is dropped occasionally because
+// metrics are sampled periodically.
 type MetricWorker struct {
-	Log        *slog.Logger
-	Name       string
-	Event      chan events.Event
-	processors []events.Processor
+	config conf.Config
+	log    *slog.Logger
+	name   string
+	event  chan events.Event
 }
 
-func NewMetricWorker(log *slog.Logger, event chan events.Event) *MetricWorker {
-	return &MetricWorker{Log: log, Event: event}
+func NewMetricWorker(config conf.Config, log *slog.Logger, event chan events.Event) MetricWorker {
+	return MetricWorker{config: config, log: log, event: event}
 }
 
 func (w MetricWorker) WithName(name string) supervisor.Worker {
-	w.Name = name
+	w.name = name
 	return w
 }
 
-func (w MetricWorker) GetName() string { return w.Name }
-
-func (w MetricWorker) Add(processor ...events.Processor) MetricWorker {
-	w.processors = append(w.processors, processor...)
-	return w
+func (w MetricWorker) GetName() string {
+	return w.name
 }
 
 func (w MetricWorker) Run(ctx context.Context) error {
+	ticker := time.NewTicker(w.config.MetricInterval)
+	defer ticker.Stop()
 	for {
 		select {
-		case event := <-w.Event:
-			w.Process(event)
-			continue
+		case <-ticker.C:
+			select {
+			case w.event <- events.Event{
+				EventType: events.EventChannelCapacity,
+				CreatedAt: time.Now().UTC(),
+				Payload: events.ChannelCapacityEvent{
+					WorkerName: w.name,
+					Capacity:   cap(w.event),
+					Length:     len(w.event),
+				},
+			}:
+			default:
+				w.log.Debug("Buffer is full, channel capacity even is lost")
+			}
 		case <-ctx.Done():
-			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
-			continue
-		default:
-			// TODO à gérer avec un retry maybe ?
-			w.Log.Info("Too bad to loose so many events...")
+			w.log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+			return nil
 		}
-	}
-}
-
-// Process Only one processor handle the event
-func (w MetricWorker) Process(event events.Event) {
-	for _, p := range w.processors {
-		if !p.CanProcess(event) {
-			continue
-		}
-		err := p.Process(event)
-		if err != nil {
-			w.Log.Error(err.Error())
-		}
-		break
 	}
 }

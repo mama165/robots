@@ -17,22 +17,21 @@ func NewChannelCapacityProcessor(log *slog.Logger, LowCapacityThreshold int) *Ch
 	return &ChannelCapacityProcessor{log: log, LowCapacityThreshold: LowCapacityThreshold}
 }
 
-func (p ChannelCapacityProcessor) CanProcess(event Event) bool {
-	return event.EventType == EventChannelCapacity
-}
-
-func (p ChannelCapacityProcessor) Process(event Event) error {
-	payload, ok := event.Payload.(ChannelCapacityEvent)
-	if !ok {
-		return errors.ErrInvalidPayload
+func (p ChannelCapacityProcessor) Handle(event Event) {
+	switch event.EventType {
+	case EventChannelCapacity:
+		payload, ok := event.Payload.(ChannelCapacityEvent)
+		if !ok {
+			p.log.Error(errors.ErrInvalidPayload.Error())
+			return
+		}
+		p.log.Debug(fmt.Sprintf("Channel usage: %d / %d", payload.Length, payload.Capacity))
+		if payload.Capacity <= 0 { // In case of unbuffered channel
+			return
+		}
+		capacityLeft := payload.Capacity - payload.Length
+		if capacityLeft > 0 && capacityLeft <= p.LowCapacityThreshold {
+			p.log.Warn(fmt.Sprintf("metric event channel capacity left : %d", capacityLeft))
+		}
 	}
-	p.log.Debug(fmt.Sprintf("Channel usage: %d / %d", payload.Length, payload.Capacity))
-	if payload.Capacity <= 0 { // In case of unbuffered channel
-		return nil
-	}
-	capacityLeft := payload.Capacity - payload.Length
-	if capacityLeft > 0 && capacityLeft <= p.LowCapacityThreshold {
-		p.log.Warn(fmt.Sprintf("metric event channel capacity left : %d", capacityLeft))
-	}
-	return nil
 }

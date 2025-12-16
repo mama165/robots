@@ -3,14 +3,13 @@ package workers
 import (
 	"context"
 	"fmt"
+	"google.golang.org/protobuf/proto"
 	"log/slog"
 	"robots/internal/robot"
 	"robots/internal/supervisor"
 	"robots/pkg/events"
-	robotpb "robots/proto/pb-go"
+	pb "robots/proto"
 	"time"
-
-	"github.com/golang/protobuf/proto"
 )
 
 // MergeSecretWorker Fetch all missing parts coming from anybody
@@ -51,7 +50,7 @@ func (w MergeSecretWorker) Run(ctx context.Context) error {
 	for {
 		select {
 		case updateMsg := <-w.Robot.GossipUpdate:
-			var gossipUpdate robotpb.GossipUpdate
+			var gossipUpdate pb.GossipUpdate
 			err := proto.Unmarshal(updateMsg, &gossipUpdate)
 			if err != nil {
 				w.Log.Info(fmt.Sprintf("Unable to decode proto message : %s", err.Error()))
@@ -60,16 +59,16 @@ func (w MergeSecretWorker) Run(ctx context.Context) error {
 			secretParts := robot.FromSecretPartsPb(gossipUpdate.SecretParts)
 			before := len(w.Robot.SecretParts)
 			for _, secretPart := range secretParts {
-				w.Robot.MergeSecretPart(secretPart)
+				w.Robot.MergeSecretPart(ctx, secretPart, w.Log, w.Event)
 			}
 			after := len(w.Robot.SecretParts)
 			if after < before {
+				robot.SendInvariantViolationEvent(ctx, w.Log, events.EventInvariantViolationSecretPartDecreased, w.Event)
 				select {
 				case w.Event <- events.Event{
-					EventType: events.EventInvariantViolation,
+					EventType: events.EventInvariantViolationSecretPartDecreased,
 					CreatedAt: time.Time{},
-					Payload: events.InvariantViolationEvent{WorkerName: w.GetName(),
-					}}:
+				}:
 					panic("INVARIANT VIOLATION: secret parts count decreased")
 				}
 			}

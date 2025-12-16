@@ -3,16 +3,15 @@ package workers
 import (
 	"context"
 	"fmt"
+	"google.golang.org/protobuf/proto"
 	"log/slog"
 	"math/rand"
 	"robots/internal/conf"
 	"robots/internal/robot"
 	"robots/internal/supervisor"
 	"robots/pkg/events"
-	robotpb "robots/proto/pb-go"
+	pb "robots/proto"
 	"time"
-
-	"github.com/golang/protobuf/proto"
 )
 
 type StartGossipWorker struct {
@@ -59,7 +58,6 @@ func (w StartGossipWorker) ExchangeMessage(ctx context.Context, sender, receiver
 	if sender.ID == receiver.ID {
 		return
 	}
-	messageSent := 0
 	for i := 0; i < w.Config.MaxAttempts; i++ {
 		w.Log.Debug(fmt.Sprintf("Robot %d communicates with robot %d", sender.ID, receiver.ID))
 
@@ -81,7 +79,7 @@ func (w StartGossipWorker) ExchangeMessage(ctx context.Context, sender, receiver
 
 		for j := 0; j <= times; j++ {
 			// Sender sends his own indexes to receiver
-			gossipSender := robotpb.GossipSummary{Indexes: sender.Indexes(), SenderId: int32(sender.ID)}
+			gossipSender := pb.GossipSummary{Indexes: sender.Indexes(), SenderId: int32(sender.ID)}
 			msgSender, err := proto.Marshal(&gossipSender)
 			if err != nil {
 				w.Log.Info(fmt.Sprintf("Unable to encode proto message : %s", err.Error()))
@@ -89,7 +87,7 @@ func (w StartGossipWorker) ExchangeMessage(ctx context.Context, sender, receiver
 			}
 			select {
 			case receiver.GossipSummary <- msgSender:
-				messageSent++
+				w.sendMessageSentEvent(ctx, sender.ID)
 			case <-ctx.Done():
 				w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
 				return
@@ -97,5 +95,19 @@ func (w StartGossipWorker) ExchangeMessage(ctx context.Context, sender, receiver
 				w.Log.Debug("StartGossip channel is full, dropping message")
 			}
 		}
+	}
+}
+
+func (w StartGossipWorker) sendMessageSentEvent(ctx context.Context, senderID int) {
+	select {
+	case w.Event <- events.Event{
+		EventType: events.EventMessageSent,
+		CreatedAt: time.Now().UTC(),
+		Payload:   events.MessageSentEvent{SenderID: senderID},
+	}:
+	case <-ctx.Done():
+		w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+	default:
+		w.Log.Debug("Buffer is full")
 	}
 }

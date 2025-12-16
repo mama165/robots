@@ -10,10 +10,6 @@ func NewSecretWrittenProcessor(log *slog.Logger) *SecretWrittenProcessor {
 	return &SecretWrittenProcessor{log: log}
 }
 
-func (p SecretWrittenProcessor) CanProcess(event Event) bool {
-	return event.EventType == EventSecretWritten
-}
-
-func (p SecretWrittenProcessor) Process(event Event) error {
+func (p SecretWrittenProcessor) Handle(event Event) error {
 	return nil
 }

@@ -1,4 +1,6 @@
 syntax = "proto3";
+package robots.proto;
+option go_package = "robots/proto/pb-go;pb";
 
 message SecretPart {
   int64 index = 1;

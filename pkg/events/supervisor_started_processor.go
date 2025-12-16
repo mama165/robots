@@ -14,6 +14,6 @@ func (p SupervisorStartedProcessor) CanProcess(event Event) bool {
 	return event.EventType == EventSupervisorStarted
 }
 
-func (p SupervisorStartedProcessor) Process(event Event) error {
+func (p SupervisorStartedProcessor) Handle(event Event) error {
 	return nil
 }

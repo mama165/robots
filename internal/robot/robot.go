@@ -2,9 +2,11 @@ package robot
 
 import (
 	"context"
+	"log/slog"
 	"math/rand"
 	"robots/internal/conf"
-	robotpb "robots/proto/pb-go"
+	"robots/pkg/events"
+	pb "robots/proto"
 	"sort"
 	"strings"
 	"time"
@@ -132,9 +134,10 @@ func (s SecretManager) CreateRobots(words []string) []*Robot {
 //
 // This method is the single entry point for mutating SecretParts
 // and acts as the consistency boundary of the Robot.
-func (r *Robot) MergeSecretPart(secretPart SecretPart) {
-	part, ok := FindSecretPart(r.SecretParts, secretPart)
+func (r *Robot) MergeSecretPart(ctx context.Context, secretPart SecretPart, log *slog.Logger, event chan events.Event) {
+	part, ok := findSecretPart(r.SecretParts, secretPart)
 	if ok && part.Word != secretPart.Word {
+		SendInvariantViolationEvent(ctx, log, events.EventInvariantViolationSameIndexDiffWords, event)
 		panic("invariant violation: same index, different word")
 	}
 	if ok {
@@ -144,10 +147,23 @@ func (r *Robot) MergeSecretPart(secretPart SecretPart) {
 	r.SecretParts = append(r.SecretParts, secretPart)
 }
 
-func FindSecretPart(secretParts []SecretPart, secretPart SecretPart) (SecretPart, bool) {
+func findSecretPart(secretParts []SecretPart, secretPart SecretPart) (SecretPart, bool) {
 	return lo.Find(secretParts, func(item SecretPart) bool {
 		return item.Index == secretPart.Index
 	})
+}
+
+func SendInvariantViolationEvent(ctx context.Context, log *slog.Logger, eventType events.EventType, event chan events.Event) {
+	select {
+	case event <- events.Event{
+		EventType: eventType,
+		CreatedAt: time.Now().UTC(),
+	}:
+	case <-ctx.Done():
+		log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+	default:
+		log.Debug("Buffer is full")
+	}
 }
 
 // IsSecretCompleted reports whether the robot has fully reconstructed the secret.
@@ -182,15 +198,15 @@ func (r *Robot) IsSecretCompleted(endOfSecret string) bool {
 	return strings.HasSuffix(words[len(words)-1], endOfSecret)
 }
 
-func FromSecretPartsPb(secretPartsPb []*robotpb.SecretPart) []SecretPart {
-	return lo.Map(secretPartsPb, func(item *robotpb.SecretPart, _ int) SecretPart {
+func FromSecretPartsPb(secretPartsPb []*pb.SecretPart) []SecretPart {
+	return lo.Map(secretPartsPb, func(item *pb.SecretPart, _ int) SecretPart {
 		return SecretPart{Index: int(item.Index), Word: item.Word}
 	})
 }
 
-func ToSecretPartsPb(secretParts []SecretPart) []*robotpb.SecretPart {
-	return lo.Map(secretParts, func(item SecretPart, _ int) *robotpb.SecretPart {
-		return &robotpb.SecretPart{
+func ToSecretPartsPb(secretParts []SecretPart) []*pb.SecretPart {
+	return lo.Map(secretParts, func(item SecretPart, _ int) *pb.SecretPart {
+		return &pb.SecretPart{
 			Index: int64(item.Index),
 			Word:  item.Word,
 		}

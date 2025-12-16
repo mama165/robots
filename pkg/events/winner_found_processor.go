@@ -14,6 +14,6 @@ func (p WinnerFoundProcessor) CanProcess(event Event) bool {
 	return event.EventType == EventWinnerFound
 }
 
-func (p WinnerFoundProcessor) Process(event Event) error {
+func (p WinnerFoundProcessor) Handle(event Event) error {
 	return nil
 }

@@ -252,6 +252,13 @@ The winner writes the reconstructed secret to disk.
 Proto files are located in `/proto`.
 
 Generate Go code from the project root:
+```bash
+docker build -t protoc-image .
+```
 
 ```bash
-docker run --rm -v "${PWD}/proto:/defs" namely/protoc-go ls /defs/proto
+docker run --rm -v "$PWD:/defs" protoc-image \
+  -I . \
+  --go_out=paths=source_relative:. \
+  --go-grpc_out=paths=source_relative:. \
+  proto/robot.proto

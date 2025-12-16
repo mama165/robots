@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"robots/pkg/errors"
+	"robots/pkg/events"
 	"sync"
 	"time"
 )
@@ -36,6 +37,7 @@ type Supervisor struct {
 	wg      *sync.WaitGroup    // Wait for the end of goroutines
 	log     *slog.Logger
 	workers []Worker
+	Event   chan events.Event
 }
 
 func NewSupervisor(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup, log *slog.Logger) Supervisor {
@@ -74,7 +76,7 @@ func (s *Supervisor) Start(worker Worker) {
 			err := func() (err error) {
 				defer func() {
 					if r := recover(); r != nil {
-						s.log.Error(fmt.Sprintf("Recovered panic in %s", worker.GetName()))
+						s.sendRestartEvent(worker)
 						err = errors.ErrWorkerPanic
 					}
 				}()
@@ -101,4 +103,18 @@ func (s *Supervisor) Start(worker Worker) {
 func (s *Supervisor) Stop() {
 	s.Cancel()
 	s.wg.Wait()
+}
+
+func (s *Supervisor) sendRestartEvent(worker Worker) {
+	select {
+	case s.Event <- events.Event{
+		EventType: events.EventWorkerRestartedAfterPanic,
+		CreatedAt: time.Now().UTC(),
+		Payload:   events.WorkerRestartedAfterPanicEvent{WorkerName: worker.GetName()},
+	}:
+	case <-s.Ctx.Done():
+		s.log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+	default:
+		s.log.Warn("Event channel full, WorkerRestartedAfterPanic event dropped")
+	}
 }

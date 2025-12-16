@@ -1,18 +1,20 @@
-# Image de base
 FROM golang:1.25.1-alpine
 
-# Installer protoc, bash et git
-RUN apk add --no-cache protobuf protobuf-dev bash git
+ARG PROTOC_VERSION=25.3
 
-# Installer les plugins Go pour protoc
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest \
-    && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+RUN apk add --no-cache bash git curl unzip
 
-# Ajouter le répertoire Go bin au PATH
-ENV PATH="/go/bin:${PATH}"
+# Installer protoc officiel
+RUN curl -L https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip \
+    -o /tmp/protoc.zip \
+ && unzip /tmp/protoc.zip -d /usr/local \
+ && rm /tmp/protoc.zip
 
-# Dossier de travail
+# Installer plugins Go
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.0 \
+ && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
+
+ENV PATH="/go/bin:/usr/local/bin:${PATH}"
+
 WORKDIR /defs
-
-# L'image est prête à l'emploi, aucun build supplémentaire nécessaire
 ENTRYPOINT ["protoc"]

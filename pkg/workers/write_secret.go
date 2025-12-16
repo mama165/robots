@@ -9,6 +9,7 @@ import (
 	"robots/internal/robot"
 	"robots/internal/supervisor"
 	"robots/pkg/events"
+	"time"
 )
 
 // WriteSecretWorker Write the secret in a file
@@ -53,5 +54,19 @@ func (w WriteSecretWorker) Run(ctx context.Context) error {
 		default:
 			w.Log.Debug("WriteSecret channel is full, dropping message")
 		}
+	}
+}
+
+func (w WriteSecretWorker) sendSecretWrittenEvent(ctx context.Context) {
+	select {
+	case w.Event <- events.Event{
+		EventType: events.EventSecretWritten,
+		CreatedAt: time.Now().UTC(),
+		Payload:   nil,
+	}:
+	case <-ctx.Done():
+		w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+	default:
+		w.Log.Debug("Buffer is full")
 	}
 }

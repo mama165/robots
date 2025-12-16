@@ -41,6 +41,7 @@ func main() {
 	event := make(chan events.Event, config.BufferSize)
 	waitGroup := sync.WaitGroup{}
 	supervisor := sp.NewSupervisor(ctx, cancel, &waitGroup, log)
+	counter := events.NewCounter()
 
 	// Only few workers run for each robot
 	for _, robot := range robots {
@@ -49,28 +50,28 @@ func main() {
 			workers.NewMergeSecretWorker(log, robot, event).WithName("update worker"),
 			workers.NewSuperviseRobotWorker(config, log, robot, winner, event).WithName("supervise robot worker"),
 			workers.NewStartGossipWorker(config, log, robot, robots, event).WithName("start gossip worker"),
+			workers.NewQuiescenceDetectorWorker(config, log, robot, event).WithName("quiescence worker"),
 		)
 	}
-
 	// One worker is responsible for writing the secret
 	// One worker to handle the events
 	supervisor.Add(
 		workers.NewWriteSecretWorker(config, log, winner, event).WithName("write secret worker"),
-		workers.NewChannelCapacityWorker(config, log, event).WithName("channel capacity worker"),
-		workers.NewMetricWorker(log, event).Add(
-			events.NewInvariantViolationProcessor(log),
+		workers.NewMetricWorker(config, log, event).WithName("channel capacity worker"),
+		workers.NewDispatcher(log, event).Add(
+			events.NewInvariantViolationProcessor(log, counter),
 			events.NewMessageDuplicatedProcessor(log),
-			events.NewMessageReceivedProcessor(log),
-			events.NewMessageReorderedProcessor(log),
-			events.NewMessageSentProcessor(log),
-			events.NewQuiescenceReachedProcessor(log),
+			events.NewMessageReceivedProcessor(log, counter),
+			events.NewMessageReorderedProcessor(log, counter),
+			events.NewMessageSentProcessor(log, counter),
 			events.NewSecretWrittenProcessor(log),
 			events.NewStartGossipProcessor(log),
 			events.NewSupervisorStartedProcessor(log),
 			events.NewWinnerFoundProcessor(log),
 			events.NewWinnerFoundProcessor(log),
-			events.NewWorkerRestartedAfterPanicProcessor(log),
+			events.NewWorkerRestartedAfterPanicProcessor(log, counter),
 			events.NewChannelCapacityProcessor(log, config.LowCapacityThreshold),
+			events.NewQuiescenceDetectorProcessor(log),
 		).WithName("metric worker"),
 	)
 	supervisor.Run()
@@ -100,6 +101,9 @@ func validateEnvVariables(config conf.Config) error {
 	}
 	if config.MaxAttempts <= 0 {
 		return errors.ErrNegativeMaxAttempts
+	}
+	if config.MetricInterval <= 0 {
+		return errors.ErrNegativeMetricInterval
 	}
 	return nil
 }

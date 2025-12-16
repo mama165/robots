@@ -3,13 +3,15 @@ package workers
 import (
 	"context"
 	"fmt"
-	"github.com/golang/protobuf/proto"
-	"github.com/samber/lo"
+	"google.golang.org/protobuf/proto"
 	"log/slog"
 	"robots/internal/robot"
 	"robots/internal/supervisor"
 	"robots/pkg/events"
-	robotpb "robots/proto/pb-go"
+	pb "robots/proto"
+	"time"
+
+	"github.com/samber/lo"
 )
 
 // ProcessSummaryWorker handles incoming gossip summaries from other robots.
@@ -41,7 +43,7 @@ func (w ProcessSummaryWorker) Run(ctx context.Context) error {
 	for {
 		select {
 		case summaryMsg := <-w.robot.GossipSummary:
-			var gossipSummary robotpb.GossipSummary
+			var gossipSummary pb.GossipSummary
 			if err := proto.Unmarshal(summaryMsg, &gossipSummary); err != nil {
 				w.Log.Info(fmt.Sprintf("Unable to decode proto message : %s", err.Error()))
 				continue
@@ -50,7 +52,7 @@ func (w ProcessSummaryWorker) Run(ctx context.Context) error {
 				return int(item)
 			})
 			secretParts := w.robot.GetWordsToSend(indexes)
-			msg, err := proto.Marshal(&robotpb.GossipUpdate{SecretParts: robot.ToSecretPartsPb(secretParts)})
+			msg, err := proto.Marshal(&pb.GossipUpdate{SecretParts: robot.ToSecretPartsPb(secretParts)})
 			if err != nil {
 				w.Log.Info(fmt.Sprintf("Unable to encode proto message : %s", err.Error()))
 				continue
@@ -62,6 +64,7 @@ func (w ProcessSummaryWorker) Run(ctx context.Context) error {
 			receiver := w.Robots[gossipSummary.SenderId]
 			select {
 			case receiver.GossipUpdate <- msg:
+				w.sendMessageReceivedEvent(ctx, receiver.ID)
 			default:
 				w.Log.Debug("GossipUpdate channel is full, dropping message")
 			}
@@ -69,5 +72,19 @@ func (w ProcessSummaryWorker) Run(ctx context.Context) error {
 			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
 			return nil
 		}
+	}
+}
+
+func (w ProcessSummaryWorker) sendMessageReceivedEvent(ctx context.Context, receiverID int) {
+	select {
+	case w.Event <- events.Event{
+		EventType: events.EventMessageReceived,
+		CreatedAt: time.Now().UTC(),
+		Payload:   events.MessageReceivedEvent{ReceiverID: receiverID},
+	}:
+	case <-ctx.Done():
+		w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+	default:
+		w.Log.Debug("Buffer is full")
 	}
 }
