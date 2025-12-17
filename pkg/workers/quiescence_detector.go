@@ -8,19 +8,21 @@ import (
 	"robots/internal/robot"
 	"robots/internal/supervisor"
 	"robots/pkg/events"
+	"sync/atomic"
 	"time"
 )
 
 type QuiescenceDetectorWorker struct {
-	Config conf.Config
-	Name   string
-	log    *slog.Logger
-	robot  *robot.Robot
-	Event  chan events.Event
+	Config        conf.Config
+	Name          string
+	log           *slog.Logger
+	robot         *robot.Robot
+	Event         chan events.Event
+	droppedEvents uint64
 }
 
-func NewQuiescenceDetectorWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, event chan events.Event) *QuiescenceDetectorWorker {
-	return &QuiescenceDetectorWorker{Config: config, log: log, robot: robot, Event: event}
+func NewQuiescenceDetectorWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, event chan events.Event, droppedEvents uint64) *QuiescenceDetectorWorker {
+	return &QuiescenceDetectorWorker{Config: config, log: log, robot: robot, Event: event, droppedEvents: droppedEvents}
 }
 
 func (w *QuiescenceDetectorWorker) WithName(name string) supervisor.Worker {
@@ -59,6 +61,7 @@ func (w *QuiescenceDetectorWorker) sendQuiescenceDetectorEvent(ctx context.Conte
 	case <-ctx.Done():
 		w.log.Debug("Context done, stopping event send")
 	default:
+		atomic.AddUint64(&w.droppedEvents, 1)
 		w.log.Warn(fmt.Sprintf("Quiescence event dropped for robot %d, channel full", robotID))
 	}
 }

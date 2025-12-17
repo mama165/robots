@@ -72,7 +72,6 @@ func (s *Supervisor) Start(worker Worker) {
 				return
 			}
 
-			// protection panic directement
 			err := func() (err error) {
 				defer func() {
 					if r := recover(); r != nil {

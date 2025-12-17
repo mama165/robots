@@ -59,7 +59,7 @@ func main() {
 			workers.NewMergeSecretWorker(log, r, event).WithName("update worker"),
 			workers.NewConvergenceDetectorWorker(config, log, r, winner, once, file).WithName("convergence detector worker"),
 			workers.NewStartGossipWorker(config, log, r, robots, event).WithName("start gossip worker"),
-			workers.NewQuiescenceDetectorWorker(config, log, r, event).WithName("quiescence worker"),
+			workers.NewQuiescenceDetectorWorker(config, log, r, event, 0).WithName("quiescence worker"),
 		)
 	}
 	// One worker is responsible for writing the secret
