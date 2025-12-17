@@ -3,12 +3,13 @@ package workers
 import (
 	"context"
 	"fmt"
-	"google.golang.org/protobuf/proto"
 	"log/slog"
 	"robots/internal/robot"
 	"robots/internal/supervisor"
 	"robots/pkg/events"
 	pb "robots/proto"
+
+	"google.golang.org/protobuf/proto"
 )
 
 // MergeSecretWorker Fetch all missing parts coming from anybody
@@ -36,7 +37,7 @@ func (w MergeSecretWorker) GetName() string {
 // Responsibilities:
 // - Merge new SecretParts into the robot's state.
 // - Update LastUpdatedAt when new parts are added.
-// Invariant enforcement:
+// Invariant enforcement (delegated to Robot.MergeSecretPart):
 // - Monotonicity: robot never loses a SecretPart.
 // - Uniqueness: each index maps to exactly one word; conflicting parts trigger panic.
 // - Duplicate messages with the same word are ignored (idempotence).
@@ -56,17 +57,11 @@ func (w MergeSecretWorker) Run(ctx context.Context) error {
 				continue
 			}
 			secretParts := robot.FromSecretPartsPb(gossipUpdate.SecretParts)
-			before := len(w.Robot.SecretParts)
 			for _, secretPart := range secretParts {
 				w.Robot.MergeSecretPart(ctx, secretPart, w.Log, w.Event)
 			}
-			after := len(w.Robot.SecretParts)
-			if after < before {
-				robot.SendInvariantViolationEvent(ctx, w.Log, events.EventInvariantViolationSecretPartDecreased, w.Event)
-				panic("INVARIANT VIOLATION: secret parts count decreased")
-			}
 		case <-ctx.Done():
-			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+			w.Log.Debug("Context done, stopping event send")
 			return nil
 		}
 	}

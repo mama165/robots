@@ -2,6 +2,7 @@ package workers
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"robots/internal/conf"
 	"robots/internal/robot"
@@ -22,32 +23,30 @@ func NewQuiescenceDetectorWorker(config conf.Config, log *slog.Logger, robot *ro
 	return &QuiescenceDetectorWorker{Config: config, log: log, robot: robot, Event: event}
 }
 
-func (w QuiescenceDetectorWorker) WithName(name string) supervisor.Worker {
+func (w *QuiescenceDetectorWorker) WithName(name string) supervisor.Worker {
 	w.Name = name
 	return w
 }
 
-func (w QuiescenceDetectorWorker) GetName() string {
+func (w *QuiescenceDetectorWorker) GetName() string {
 	return w.Name
 }
 
-func (w QuiescenceDetectorWorker) Run(ctx context.Context) error {
+func (w *QuiescenceDetectorWorker) Run(ctx context.Context) error {
 	ticker := time.NewTicker(w.Config.MetricInterval)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
 			w.sendQuiescenceDetectorEvent(ctx, w.robot.ID)
-			return nil
 		case <-ctx.Done():
-			w.log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
-		default:
-			w.log.Debug("Buffer is full")
+			w.log.Info("Stopping quiescence detector")
+			return nil
 		}
-		return nil
 	}
 }
 
-func (w QuiescenceDetectorWorker) sendQuiescenceDetectorEvent(ctx context.Context, robotID int) {
+func (w *QuiescenceDetectorWorker) sendQuiescenceDetectorEvent(ctx context.Context, robotID int) {
 	select {
 	case w.Event <- events.Event{
 		EventType: events.EventQuiescenceDetector,
@@ -58,8 +57,8 @@ func (w QuiescenceDetectorWorker) sendQuiescenceDetectorEvent(ctx context.Contex
 		},
 	}:
 	case <-ctx.Done():
-		w.log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+		w.log.Debug("Context done, stopping event send")
 	default:
-		w.log.Debug("Buffer is full")
+		w.log.Warn(fmt.Sprintf("Quiescence event dropped for robot %d, channel full", robotID))
 	}
 }

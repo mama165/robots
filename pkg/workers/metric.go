@@ -53,7 +53,7 @@ func (w MetricWorker) Run(ctx context.Context) error {
 				w.log.Debug("Buffer is full, channel capacity even is lost")
 			}
 		case <-ctx.Done():
-			w.log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+			w.log.Debug("Context done, stopping event send")
 			return nil
 		}
 	}

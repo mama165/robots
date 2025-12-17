@@ -8,16 +8,14 @@ import (
 type EventType string
 
 const (
-	EventMessageSent                           EventType = "MESSAGE_SENT"
-	EventMessageReceived                       EventType = "MESSAGE_RECEIVED"
-	EventMessageDuplicated                     EventType = "MESSAGE_DUPLICATED"
-	EventMessageReordered                      EventType = "MESSAGE_REORDERED"
-	EventSecretWritten                         EventType = "SECRET_WRITTEN"
-	EventInvariantViolationSecretPartDecreased EventType = "INVARIANT_VIOLATION_SECRET_PART_DECREASED"
-	EventInvariantViolationSameIndexDiffWords  EventType = "INVARIANT_VIOLATION_SAME_INDEX_DIFF_WORDS"
-	EventQuiescenceDetector                    EventType = "QUIESCENCE_DETECTOR"
-	EventWorkerRestartedAfterPanic             EventType = "WORKER_RESTARTED_AFTER_PANIC"
-	EventChannelCapacity                       EventType = "CHANNEL_CAPACITY"
+	EventMessageSent                          EventType = "MESSAGE_SENT"
+	EventMessageReceived                      EventType = "MESSAGE_RECEIVED"
+	EventMessageDuplicated                    EventType = "MESSAGE_DUPLICATED"
+	EventMessageReordered                     EventType = "MESSAGE_REORDERED"
+	EventInvariantViolationSameIndexDiffWords EventType = "INVARIANT_VIOLATION_SAME_INDEX_DIFF_WORDS"
+	EventQuiescenceDetector                   EventType = "QUIESCENCE_DETECTOR"
+	EventWorkerRestartedAfterPanic            EventType = "WORKER_RESTARTED_AFTER_PANIC"
+	EventChannelCapacity                      EventType = "CHANNEL_CAPACITY"
 )
 
 type Event struct {

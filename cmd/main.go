@@ -2,9 +2,10 @@ package main
 
 import (
 	"context"
+	"os"
 	"os/signal"
 	"robots/internal/conf"
-	rb "robots/internal/robot"
+	"robots/internal/robot"
 	sp "robots/internal/supervisor"
 	"robots/pkg/errors"
 	"robots/pkg/events"
@@ -32,25 +33,33 @@ func main() {
 	ctx, stop := signal.NotifyContext(timeoutCtx, syscall.SIGINT) // Handle CTRL+C
 	defer cancel()
 	defer stop()
-	secretManager := rb.SecretManager{Config: config}
+	secretManager := robot.SecretManager{Config: config}
 	secret := secretManager.SplitSecret(config.Secret)
 	robots := secretManager.CreateRobots(secret)
-	winner := make(chan rb.Robot)
+	winner := make(chan *robot.Robot, 1)
 	// ⚠️ Buffer will receive a lot of events
 	// ⚠️ Message can be lost
 	event := make(chan events.Event, config.BufferSize)
 	waitGroup := sync.WaitGroup{}
 	supervisor := sp.NewSupervisor(ctx, cancel, &waitGroup, log)
 	counter := events.NewCounter()
+	once := &sync.Once{}
+
+	file, err := os.Create(config.OutputFile)
+	if err != nil {
+		log.Error(err.Error())
+		panic(err)
+	}
+	defer file.Close()
 
 	// Only few workers run for each robot
-	for _, robot := range robots {
+	for _, r := range robots {
 		supervisor.Add(
-			workers.NewProcessSummaryWorker(log, robot, robots, event).WithName("summary worker"),
-			workers.NewMergeSecretWorker(log, robot, event).WithName("update worker"),
-			workers.NewConvergenceDetectorWorker(config, log, robot, winner).WithName("convergence detector worker"),
-			workers.NewStartGossipWorker(config, log, robot, robots, event).WithName("start gossip worker"),
-			workers.NewQuiescenceDetectorWorker(config, log, robot, event).WithName("quiescence worker"),
+			workers.NewProcessSummaryWorker(log, r, robots, event).WithName("summary worker"),
+			workers.NewMergeSecretWorker(log, r, event).WithName("update worker"),
+			workers.NewConvergenceDetectorWorker(config, log, r, winner, once, file).WithName("convergence detector worker"),
+			workers.NewStartGossipWorker(config, log, r, robots, event).WithName("start gossip worker"),
+			workers.NewQuiescenceDetectorWorker(config, log, r, event).WithName("quiescence worker"),
 		)
 	}
 	// One worker is responsible for writing the secret
@@ -59,7 +68,7 @@ func main() {
 		workers.NewMetricWorker(config, log, event).WithName("channel capacity worker"),
 		workers.NewDispatcher(log, event).Add(
 			events.NewInvariantViolationProcessor(log, counter),
-			events.NewMessageDuplicatedProcessor(log),
+			events.NewMessageDuplicatedProcessor(log, counter),
 			events.NewMessageReceivedProcessor(log, counter),
 			events.NewMessageReorderedProcessor(log, counter),
 			events.NewMessageSentProcessor(log, counter),

@@ -3,7 +3,6 @@ package workers
 import (
 	"context"
 	"fmt"
-	"google.golang.org/protobuf/proto"
 	"log/slog"
 	"math/rand"
 	"robots/internal/conf"
@@ -12,6 +11,8 @@ import (
 	"robots/pkg/events"
 	pb "robots/proto"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 )
 
 type StartGossipWorker struct {
@@ -46,7 +47,7 @@ func (w StartGossipWorker) Run(ctx context.Context) error {
 			receiver := robot.ChooseRobot(sender, w.Robots)
 			w.ExchangeMessage(ctx, sender, receiver)
 		case <-ctx.Done():
-			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+			w.Log.Debug("Context done, stopping event send")
 			return nil
 		}
 	}
@@ -59,8 +60,6 @@ func (w StartGossipWorker) ExchangeMessage(ctx context.Context, sender, receiver
 		return
 	}
 	for i := 0; i < w.Config.MaxAttempts; i++ {
-		w.Log.Debug(fmt.Sprintf("Robot %d communicates with robot %d", sender.ID, receiver.ID))
-
 		// Calculate and simulate a random percentage
 		isSimulated := func(percentage int) bool {
 			return rand.Float32() < float32(percentage)/100.0
@@ -87,9 +86,9 @@ func (w StartGossipWorker) ExchangeMessage(ctx context.Context, sender, receiver
 			}
 			select {
 			case receiver.GossipSummary <- msgSender:
-				w.sendMessageSentEvent(ctx, *sender)
+				w.sendMessageSentEvent(ctx, sender)
 			case <-ctx.Done():
-				w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+				w.Log.Debug("Context done, stopping event send")
 				return
 			default:
 				w.Log.Debug("StartGossip channel is full, dropping message")
@@ -98,7 +97,7 @@ func (w StartGossipWorker) ExchangeMessage(ctx context.Context, sender, receiver
 	}
 }
 
-func (w StartGossipWorker) sendMessageSentEvent(ctx context.Context, sender robot.Robot) {
+func (w StartGossipWorker) sendMessageSentEvent(ctx context.Context, sender *robot.Robot) {
 	select {
 	case w.Event <- events.Event{
 		EventType: events.EventMessageSent,
@@ -106,7 +105,7 @@ func (w StartGossipWorker) sendMessageSentEvent(ctx context.Context, sender robo
 		Payload:   events.MessageSentEvent{SenderID: sender.ID},
 	}:
 	case <-ctx.Done():
-		w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+		w.Log.Debug("Context done, stopping event send")
 	default:
 		w.Log.Debug("Buffer is full")
 	}

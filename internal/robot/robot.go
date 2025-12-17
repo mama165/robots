@@ -9,6 +9,7 @@ import (
 	pb "robots/proto"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/samber/lo"
@@ -38,6 +39,7 @@ type Robot struct {
 	GossipSummary chan []byte // Represents a channel of current indexes of robots
 	GossipUpdate  chan []byte // Represents a channel of missing secretParts
 	LastUpdatedAt time.Time   // Necessary to know if no words have been received since a long time
+	mu            sync.RWMutex
 }
 
 // SecretPart Represents a word and the position from the secret
@@ -135,6 +137,8 @@ func (s SecretManager) CreateRobots(words []string) []*Robot {
 // This method is the single entry point for mutating SecretParts
 // and acts as the consistency boundary of the Robot.
 func (r *Robot) MergeSecretPart(ctx context.Context, secretPart SecretPart, log *slog.Logger, event chan events.Event) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	part, ok := findSecretPart(r.SecretParts, secretPart)
 	if ok && part.Word != secretPart.Word {
 		SendInvariantViolationEvent(ctx, log, events.EventInvariantViolationSameIndexDiffWords, event)
@@ -172,6 +176,8 @@ func SendInvariantViolationEvent(ctx context.Context, log *slog.Logger, eventTyp
 // - and the last word ends with the given end-of-secret marker.
 // This prevents false positives caused by partial, unordered, or duplicated gossip messages.
 func (r *Robot) IsSecretCompleted(endOfSecret string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	parts := r.SecretParts
 	if len(parts) == 0 {
 		return false

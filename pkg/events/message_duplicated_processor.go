@@ -9,11 +9,11 @@ import (
 type MessageDuplicatedProcessor struct {
 	log     *slog.Logger
 	mu      sync.Mutex
-	counter int
+	counter *Counter
 }
 
-func NewMessageDuplicatedProcessor(log *slog.Logger) *MessageDuplicatedProcessor {
-	return &MessageDuplicatedProcessor{log: log}
+func NewMessageDuplicatedProcessor(log *slog.Logger, counter *Counter) *MessageDuplicatedProcessor {
+	return &MessageDuplicatedProcessor{log: log, counter: counter}
 }
 
 func (p *MessageDuplicatedProcessor) Handle(event Event) {
@@ -25,6 +25,6 @@ func (p *MessageDuplicatedProcessor) Handle(event Event) {
 		}
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		p.counter++
+		p.counter.Increment(EventMessageDuplicated)
 	}
 }

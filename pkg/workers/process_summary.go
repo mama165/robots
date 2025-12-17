@@ -69,7 +69,7 @@ func (w ProcessSummaryWorker) Run(ctx context.Context) error {
 				w.Log.Debug("GossipUpdate channel is full, dropping message")
 			}
 		case <-ctx.Done():
-			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+			w.Log.Debug("Context done, stopping event send")
 			return nil
 		}
 	}
@@ -83,7 +83,7 @@ func (w ProcessSummaryWorker) sendMessageReceivedEvent(ctx context.Context, rece
 		Payload:   events.MessageReceivedEvent{ReceiverID: receiverID},
 	}:
 	case <-ctx.Done():
-		w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
+		w.Log.Debug("Context done, stopping event send")
 	default:
 		w.Log.Debug("Buffer is full")
 	}

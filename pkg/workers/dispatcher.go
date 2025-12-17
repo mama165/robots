@@ -37,9 +37,8 @@ func (w Dispatcher) Run(ctx context.Context) error {
 			w.Dispatch(event)
 			continue
 		case <-ctx.Done():
-			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
-			continue
-		default:
+			w.Log.Debug("Context done, stopping event send")
+			return nil
 		}
 	}
 }

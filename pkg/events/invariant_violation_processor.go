@@ -19,14 +19,14 @@ func NewInvariantViolationProcessor(log *slog.Logger, counter *Counter) *Invaria
 
 func (p *InvariantViolationProcessor) Handle(event Event) {
 	switch event.EventType {
-	case EventInvariantViolationSecretPartDecreased, EventInvariantViolationSameIndexDiffWords:
+	case EventInvariantViolationSameIndexDiffWords:
 		_, ok := event.Payload.(InvariantViolationEvent)
 		if !ok {
 			p.log.Error(errors.ErrInvalidPayload.Error())
 		}
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		p.counter.Increment(event.EventType)
-		p.log.Debug(fmt.Sprintf("Invariant violation %s occurred, total: %d\n", event.EventType, p.counter.Get(event.EventType)))
+		p.counter.Increment(EventInvariantViolationSameIndexDiffWords)
+		p.log.Debug(fmt.Sprintf("Invariant violation %s occurred, total: %d\n", EventInvariantViolationSameIndexDiffWords, p.counter.Get(event.EventType)))
 	}
 }
