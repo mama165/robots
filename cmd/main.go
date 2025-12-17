@@ -48,7 +48,7 @@ func main() {
 		supervisor.Add(
 			workers.NewProcessSummaryWorker(log, robot, robots, event).WithName("summary worker"),
 			workers.NewMergeSecretWorker(log, robot, event).WithName("update worker"),
-			workers.NewSuperviseRobotWorker(config, log, robot, winner, event).WithName("supervise robot worker"),
+			workers.NewConvergenceDetectorWorker(config, log, robot, winner).WithName("convergence detector worker"),
 			workers.NewStartGossipWorker(config, log, robot, robots, event).WithName("start gossip worker"),
 			workers.NewQuiescenceDetectorWorker(config, log, robot, event).WithName("quiescence worker"),
 		)
@@ -63,11 +63,6 @@ func main() {
 			events.NewMessageReceivedProcessor(log, counter),
 			events.NewMessageReorderedProcessor(log, counter),
 			events.NewMessageSentProcessor(log, counter),
-			events.NewSecretWrittenProcessor(log),
-			events.NewStartGossipProcessor(log),
-			events.NewSupervisorStartedProcessor(log),
-			events.NewWinnerFoundProcessor(log),
-			events.NewWinnerFoundProcessor(log),
 			events.NewWorkerRestartedAfterPanicProcessor(log, counter),
 			events.NewChannelCapacityProcessor(log, config.LowCapacityThreshold),
 			events.NewQuiescenceDetectorProcessor(log),

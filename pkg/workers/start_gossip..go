@@ -87,7 +87,7 @@ func (w StartGossipWorker) ExchangeMessage(ctx context.Context, sender, receiver
 			}
 			select {
 			case receiver.GossipSummary <- msgSender:
-				w.sendMessageSentEvent(ctx, sender.ID)
+				w.sendMessageSentEvent(ctx, *sender)
 			case <-ctx.Done():
 				w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
 				return
@@ -98,12 +98,12 @@ func (w StartGossipWorker) ExchangeMessage(ctx context.Context, sender, receiver
 	}
 }
 
-func (w StartGossipWorker) sendMessageSentEvent(ctx context.Context, senderID int) {
+func (w StartGossipWorker) sendMessageSentEvent(ctx context.Context, sender robot.Robot) {
 	select {
 	case w.Event <- events.Event{
 		EventType: events.EventMessageSent,
 		CreatedAt: time.Now().UTC(),
-		Payload:   events.MessageSentEvent{SenderID: senderID},
+		Payload:   events.MessageSentEvent{SenderID: sender.ID},
 	}:
 	case <-ctx.Done():
 		w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")

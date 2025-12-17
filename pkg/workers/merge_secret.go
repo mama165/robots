@@ -9,7 +9,6 @@ import (
 	"robots/internal/supervisor"
 	"robots/pkg/events"
 	pb "robots/proto"
-	"time"
 )
 
 // MergeSecretWorker Fetch all missing parts coming from anybody
@@ -64,13 +63,7 @@ func (w MergeSecretWorker) Run(ctx context.Context) error {
 			after := len(w.Robot.SecretParts)
 			if after < before {
 				robot.SendInvariantViolationEvent(ctx, w.Log, events.EventInvariantViolationSecretPartDecreased, w.Event)
-				select {
-				case w.Event <- events.Event{
-					EventType: events.EventInvariantViolationSecretPartDecreased,
-					CreatedAt: time.Time{},
-				}:
-					panic("INVARIANT VIOLATION: secret parts count decreased")
-				}
+				panic("INVARIANT VIOLATION: secret parts count decreased")
 			}
 		case <-ctx.Done():
 			w.Log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
