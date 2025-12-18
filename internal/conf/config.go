@@ -16,6 +16,7 @@ type Config struct {
 	QuietPeriod            time.Duration `env:"QUIET_PERIOD,required=true"`
 	GossipTime             time.Duration `env:"GOSSIP_TIME,required=true"`
 	MetricInterval         time.Duration `env:"METRIC_INTERVAL,required=true"`
+	SnapshotInterval       time.Duration `env:"SNAPSHOT_INTERVAL,required=true"`
 	LowCapacityThreshold   int           `env:"LOW_CAPACITY_THRESHOLD,required=true"`
 	LogLevel               string        `env:"LOG_LEVEL,default=INFO"`
 }

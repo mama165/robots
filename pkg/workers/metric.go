@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"robots/internal/conf"
-	"robots/internal/supervisor"
 	"robots/pkg/events"
 	"time"
 )
@@ -16,7 +15,7 @@ import (
 type MetricWorker struct {
 	config conf.Config
 	log    *slog.Logger
-	name   string
+	name   events.WorkerName
 	event  chan events.Event
 }
 
@@ -24,13 +23,13 @@ func NewMetricWorker(config conf.Config, log *slog.Logger, event chan events.Eve
 	return MetricWorker{config: config, log: log, event: event}
 }
 
-func (w MetricWorker) WithName(name string) supervisor.Worker {
-	w.name = name
+func (w MetricWorker) WithName(name string) Worker {
+	w.name = events.WorkerName(name)
 	return w
 }
 
-func (w MetricWorker) GetName() string {
-	return w.name
+func (w MetricWorker) GetName() events.WorkerName {
+	return events.WorkerName(w.name)
 }
 
 func (w MetricWorker) Run(ctx context.Context) error {

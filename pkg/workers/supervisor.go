@@ -1,4 +1,4 @@
-package supervisor
+package workers
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 // Can be silly, focused
 type Worker interface {
 	WithName(name string) Worker
-	GetName() string
+	GetName() events.WorkerName
 	Run(ctx context.Context) error
 }
 

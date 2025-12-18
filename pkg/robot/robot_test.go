@@ -1,11 +1,10 @@
 package robot
 
 import (
-	"context"
-	"github.com/stretchr/testify/assert"
-	"log/slog"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestRobot_IsSecretCompleted(t *testing.T) {
@@ -142,7 +141,6 @@ func TestRobot_IsSecretCompleted(t *testing.T) {
 
 func TestRobot_MergeSecretPart_Idempotence(t *testing.T) {
 	ass := assert.New(t)
-	ctx := context.Background()
 	r := &Robot{
 		ID:          0,
 		SecretParts: []SecretPart{},
@@ -151,16 +149,16 @@ func TestRobot_MergeSecretPart_Idempotence(t *testing.T) {
 	part := SecretPart{Index: 0, Word: "hello"}
 
 	// Given Merging first time
-	r.MergeSecretPart(ctx, part, slog.Default(), nil)
+	r.MergeSecretPart(part)
 	ass.Equal(1, len(r.SecretParts))
 
 	// Given Merging the same part (idempotent)
-	r.MergeSecretPart(ctx, part, slog.Default(), nil)
+	r.MergeSecretPart(part)
 	ass.Equal(1, len(r.SecretParts))
 
 	// Given Merging a different part on the same index → panic expected
 	partConflict := SecretPart{Index: 0, Word: "world"}
 	ass.Panics(func() {
-		r.MergeSecretPart(ctx, partConflict, slog.Default(), nil)
+		r.MergeSecretPart(partConflict)
 	})
 }

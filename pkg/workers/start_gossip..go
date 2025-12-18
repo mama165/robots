@@ -6,9 +6,8 @@ import (
 	"log/slog"
 	"math/rand"
 	"robots/internal/conf"
-	"robots/internal/robot"
-	"robots/internal/supervisor"
 	"robots/pkg/events"
+	"robots/pkg/robot"
 	pb "robots/proto"
 	"time"
 
@@ -18,7 +17,7 @@ import (
 type StartGossipWorker struct {
 	Config conf.Config
 	Log    *slog.Logger
-	Name   string
+	Name   events.WorkerName
 	Robot  *robot.Robot
 	Robots []*robot.Robot
 	Event  chan events.Event
@@ -28,12 +27,12 @@ func NewStartGossipWorker(config conf.Config, log *slog.Logger, robot *robot.Rob
 	return StartGossipWorker{Config: config, Log: log, Robot: robot, Robots: robots, Event: event}
 }
 
-func (w StartGossipWorker) WithName(name string) supervisor.Worker {
-	w.Name = name
+func (w StartGossipWorker) WithName(name string) Worker {
+	w.Name = events.WorkerName(name)
 	return w
 }
 
-func (w StartGossipWorker) GetName() string {
+func (w StartGossipWorker) GetName() events.WorkerName {
 	return w.Name
 }
 

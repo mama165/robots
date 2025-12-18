@@ -1,9 +1,16 @@
 package events
 
 import (
+	"robots/pkg/robot"
 	"sync"
 	"time"
 )
+
+type WorkerName string
+
+func (name WorkerName) ToString() string {
+	return string(name)
+}
 
 type EventType string
 
@@ -12,6 +19,7 @@ const (
 	EventMessageReceived                      EventType = "MESSAGE_RECEIVED"
 	EventMessageDuplicated                    EventType = "MESSAGE_DUPLICATED"
 	EventMessageReordered                     EventType = "MESSAGE_REORDERED"
+	EventMessageLost                          EventType = "MESSAGE_LOST"
 	EventInvariantViolationSameIndexDiffWords EventType = "INVARIANT_VIOLATION_SAME_INDEX_DIFF_WORDS"
 	EventQuiescenceDetector                   EventType = "QUIESCENCE_DETECTOR"
 	EventWorkerRestartedAfterPanic            EventType = "WORKER_RESTARTED_AFTER_PANIC"
@@ -25,32 +33,34 @@ type Event struct {
 }
 
 type MessageSentEvent struct {
-	SenderID int
+	SenderID robot.ID
 }
 
 type MessageReceivedEvent struct {
-	ReceiverID int
+	ReceiverID robot.ID
 }
 
 type MessageDuplicatedEvent struct{}
 type MessageReorderedEvent struct{}
-type InvariantViolationEvent struct{}
+type InvariantViolationEvent struct {
+	ID robot.ID
+}
 
 type SecretWrittenEvent struct {
 	ID int
 }
 
 type QuiescenceDetectorEvent struct {
-	RobotID      int
+	ID           int
 	LastActivity LastActivity
 }
 
 type WorkerRestartedAfterPanicEvent struct {
-	WorkerName string
+	WorkerName WorkerName
 }
 
 type ChannelCapacityEvent struct {
-	WorkerName string
+	WorkerName WorkerName
 	Capacity   int
 	Length     int
 }

@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"robots/internal/robot"
-	"robots/internal/supervisor"
 	"robots/pkg/events"
+	"robots/pkg/robot"
 	pb "robots/proto"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -15,7 +15,7 @@ import (
 // MergeSecretWorker Fetch all missing parts coming from anybody
 type MergeSecretWorker struct {
 	Log   *slog.Logger
-	Name  string
+	Name  events.WorkerName
 	Robot *robot.Robot
 	Event chan events.Event
 }
@@ -24,12 +24,12 @@ func NewMergeSecretWorker(logger *slog.Logger, robot *robot.Robot, event chan ev
 	return MergeSecretWorker{Log: logger, Robot: robot, Event: event}
 }
 
-func (w MergeSecretWorker) WithName(name string) supervisor.Worker {
-	w.Name = name
+func (w MergeSecretWorker) WithName(name string) Worker {
+	w.Name = events.WorkerName(name)
 	return w
 }
 
-func (w MergeSecretWorker) GetName() string {
+func (w MergeSecretWorker) GetName() events.WorkerName {
 	return w.Name
 }
 
@@ -58,11 +58,30 @@ func (w MergeSecretWorker) Run(ctx context.Context) error {
 			}
 			secretParts := robot.FromSecretPartsPb(gossipUpdate.SecretParts)
 			for _, secretPart := range secretParts {
-				w.Robot.MergeSecretPart(ctx, secretPart, w.Log, w.Event)
+				defer func() {
+					if r := recover(); r != nil {
+						sendInvariantViolationEvent(ctx, w.Robot, w.Event)
+					}
+				}()
+				w.Robot.MergeSecretPart(secretPart)
 			}
 		case <-ctx.Done():
 			w.Log.Debug("Context done, stopping event send")
 			return nil
 		}
+	}
+}
+
+func sendInvariantViolationEvent(ctx context.Context, r *robot.Robot, event chan events.Event) {
+	select {
+	case event <- events.Event{
+		EventType: events.EventInvariantViolationSameIndexDiffWords,
+		CreatedAt: time.Now().UTC(),
+		Payload:   events.InvariantViolationEvent{ID: r.ID},
+	}:
+	case <-ctx.Done():
+		return
+	default:
+		// TODO à gérer
 	}
 }

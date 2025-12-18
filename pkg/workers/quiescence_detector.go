@@ -5,16 +5,15 @@ import (
 	"fmt"
 	"log/slog"
 	"robots/internal/conf"
-	"robots/internal/robot"
-	"robots/internal/supervisor"
 	"robots/pkg/events"
+	"robots/pkg/robot"
 	"sync/atomic"
 	"time"
 )
 
 type QuiescenceDetectorWorker struct {
 	Config        conf.Config
-	Name          string
+	Name          events.WorkerName
 	log           *slog.Logger
 	robot         *robot.Robot
 	Event         chan events.Event
@@ -25,12 +24,12 @@ func NewQuiescenceDetectorWorker(config conf.Config, log *slog.Logger, robot *ro
 	return &QuiescenceDetectorWorker{Config: config, log: log, robot: robot, Event: event, droppedEvents: droppedEvents}
 }
 
-func (w *QuiescenceDetectorWorker) WithName(name string) supervisor.Worker {
-	w.Name = name
+func (w *QuiescenceDetectorWorker) WithName(name string) Worker {
+	w.Name = events.WorkerName(name)
 	return w
 }
 
-func (w *QuiescenceDetectorWorker) GetName() string {
+func (w *QuiescenceDetectorWorker) GetName() events.WorkerName {
 	return w.Name
 }
 
@@ -48,13 +47,13 @@ func (w *QuiescenceDetectorWorker) Run(ctx context.Context) error {
 	}
 }
 
-func (w *QuiescenceDetectorWorker) sendQuiescenceDetectorEvent(ctx context.Context, robotID int) {
+func (w *QuiescenceDetectorWorker) sendQuiescenceDetectorEvent(ctx context.Context, ID robot.ID) {
 	select {
 	case w.Event <- events.Event{
 		EventType: events.EventQuiescenceDetector,
 		CreatedAt: time.Now().UTC(),
 		Payload: events.QuiescenceDetectorEvent{
-			RobotID:      robotID,
+			ID:           ID.ToInt(),
 			LastActivity: events.LastActivity(w.robot.LastUpdatedAt),
 		},
 	}:
@@ -62,6 +61,6 @@ func (w *QuiescenceDetectorWorker) sendQuiescenceDetectorEvent(ctx context.Conte
 		w.log.Debug("Context done, stopping event send")
 	default:
 		atomic.AddUint64(&w.droppedEvents, 1)
-		w.log.Warn(fmt.Sprintf("Quiescence event dropped for robot %d, channel full", robotID))
+		w.log.Warn(fmt.Sprintf("Quiescence event dropped for robot %d, channel full", ID))
 	}
 }

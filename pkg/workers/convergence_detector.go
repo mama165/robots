@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"robots/internal/conf"
-	"robots/internal/robot"
-	"robots/internal/supervisor"
+	"robots/pkg/events"
+	"robots/pkg/robot"
 	"sync"
 	"time"
 )
@@ -30,7 +29,7 @@ type ConvergenceDetectorWorker struct {
 	Config conf.Config
 	Log    *slog.Logger
 	Robot  *robot.Robot
-	Name   string
+	Name   events.WorkerName
 	Winner chan *robot.Robot
 	once   *sync.Once
 	writer io.Writer
@@ -43,12 +42,12 @@ func NewConvergenceDetectorWorker(config conf.Config, log *slog.Logger, robot *r
 	return ConvergenceDetectorWorker{Config: config, Log: log, Robot: robot, Winner: winner, once: once, writer: writer}
 }
 
-func (w ConvergenceDetectorWorker) WithName(name string) supervisor.Worker {
-	w.Name = name
+func (w ConvergenceDetectorWorker) WithName(name string) Worker {
+	w.Name = events.WorkerName(name)
 	return w
 }
 
-func (w ConvergenceDetectorWorker) GetName() string {
+func (w ConvergenceDetectorWorker) GetName() events.WorkerName {
 	return w.Name
 }
 
@@ -60,7 +59,6 @@ func (w ConvergenceDetectorWorker) Run(ctx context.Context) error {
 		case <-ticker.C:
 			elapsed := w.Robot.LastUpdatedAt.Add(w.Config.QuietPeriod).Before(time.Now().UTC())
 			if elapsed && w.Robot.IsSecretCompleted(w.Config.EndOfSecret) {
-				log.Print("Secret found !!!!!!!")
 				w.tryWriteSecret()
 			}
 		case <-ctx.Done():

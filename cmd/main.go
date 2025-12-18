@@ -5,10 +5,9 @@ import (
 	"os"
 	"os/signal"
 	"robots/internal/conf"
-	"robots/internal/robot"
-	sp "robots/internal/supervisor"
 	"robots/pkg/errors"
 	"robots/pkg/events"
+	"robots/pkg/robot"
 	"robots/pkg/workers"
 	"sync"
 	"syscall"
@@ -33,15 +32,15 @@ func main() {
 	ctx, stop := signal.NotifyContext(timeoutCtx, syscall.SIGINT) // Handle CTRL+C
 	defer cancel()
 	defer stop()
+	event := make(chan events.Event, config.BufferSize)
 	secretManager := robot.SecretManager{Config: config}
 	secret := secretManager.SplitSecret(config.Secret)
 	robots := secretManager.CreateRobots(secret)
 	winner := make(chan *robot.Robot, 1)
 	// ⚠️ Buffer will receive a lot of events
 	// ⚠️ Message can be lost
-	event := make(chan events.Event, config.BufferSize)
 	waitGroup := sync.WaitGroup{}
-	supervisor := sp.NewSupervisor(ctx, cancel, &waitGroup, log)
+	supervisor := workers.NewSupervisor(ctx, cancel, &waitGroup, log)
 	counter := events.NewCounter()
 	once := &sync.Once{}
 
@@ -66,6 +65,7 @@ func main() {
 	// One worker to handle the events
 	supervisor.Add(
 		workers.NewMetricWorker(config, log, event).WithName("channel capacity worker"),
+		workers.NewSnapshotWorker(config, log, event),
 		workers.NewDispatcher(log, event).Add(
 			events.NewInvariantViolationProcessor(log, counter),
 			events.NewMessageDuplicatedProcessor(log, counter),

@@ -2,10 +2,8 @@ package robot
 
 import (
 	"context"
-	"log/slog"
 	"math/rand"
 	"robots/internal/conf"
-	"robots/pkg/events"
 	pb "robots/proto"
 	"sort"
 	"strings"
@@ -30,16 +28,22 @@ type SecretManager struct {
 	Config conf.Config
 }
 
+type ID int
+
+func (id ID) ToInt() int {
+	return int(id)
+}
+
 // Robot GossipSummary and GossipUpdate have to be inside the robot
 // Because at any moment robot exchange with others
 // They should have their own snapshot
 type Robot struct {
-	ID            int // Index of the robots
+	mu            sync.RWMutex
+	ID            ID // Index of the robots
 	SecretParts   []SecretPart
 	GossipSummary chan []byte // Represents a channel of current indexes of robots
 	GossipUpdate  chan []byte // Represents a channel of missing secretParts
 	LastUpdatedAt time.Time   // Necessary to know if no words have been received since a long time
-	mu            sync.RWMutex
 }
 
 // SecretPart Represents a word and the position from the secret
@@ -108,7 +112,7 @@ func (s SecretManager) CreateRobots(words []string) []*Robot {
 	robots := make([]*Robot, s.Config.NbrOfRobots)
 	for i := 0; i < s.Config.NbrOfRobots; i++ {
 		robots[i] = &Robot{
-			ID:            i,
+			ID:            ID(i),
 			SecretParts:   []SecretPart{},
 			GossipSummary: make(chan []byte, s.Config.BufferSize),
 			GossipUpdate:  make(chan []byte, s.Config.BufferSize),
@@ -136,12 +140,11 @@ func (s SecretManager) CreateRobots(words []string) []*Robot {
 //
 // This method is the single entry point for mutating SecretParts
 // and acts as the consistency boundary of the Robot.
-func (r *Robot) MergeSecretPart(ctx context.Context, secretPart SecretPart, log *slog.Logger, event chan events.Event) {
+func (r *Robot) MergeSecretPart(secretPart SecretPart) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	part, ok := findSecretPart(r.SecretParts, secretPart)
 	if ok && part.Word != secretPart.Word {
-		SendInvariantViolationEvent(ctx, log, events.EventInvariantViolationSameIndexDiffWords, event)
 		panic("invariant violation: same index, different word")
 	}
 	if ok {
@@ -155,19 +158,6 @@ func findSecretPart(secretParts []SecretPart, secretPart SecretPart) (SecretPart
 	return lo.Find(secretParts, func(item SecretPart) bool {
 		return item.Index == secretPart.Index
 	})
-}
-
-func SendInvariantViolationEvent(ctx context.Context, log *slog.Logger, eventType events.EventType, event chan events.Event) {
-	select {
-	case event <- events.Event{
-		EventType: eventType,
-		CreatedAt: time.Now().UTC(),
-	}:
-	case <-ctx.Done():
-		log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
-	default:
-		log.Debug("Buffer is full")
-	}
 }
 
 // IsSecretCompleted reports whether the robot has fully reconstructed the secret.

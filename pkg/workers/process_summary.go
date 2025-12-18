@@ -3,13 +3,13 @@ package workers
 import (
 	"context"
 	"fmt"
-	"google.golang.org/protobuf/proto"
 	"log/slog"
-	"robots/internal/robot"
-	"robots/internal/supervisor"
 	"robots/pkg/events"
+	"robots/pkg/robot"
 	pb "robots/proto"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 
 	"github.com/samber/lo"
 )
@@ -20,7 +20,7 @@ import (
 // Channel capacity can be monitored via metrics if needed.
 type ProcessSummaryWorker struct {
 	Log    *slog.Logger
-	Name   string
+	Name   events.WorkerName
 	robot  *robot.Robot
 	Robots []*robot.Robot
 	Event  chan events.Event
@@ -30,12 +30,12 @@ func NewProcessSummaryWorker(logger *slog.Logger, robot *robot.Robot, robots []*
 	return ProcessSummaryWorker{Log: logger, robot: robot, Robots: robots, Event: event}
 }
 
-func (w ProcessSummaryWorker) WithName(name string) supervisor.Worker {
-	w.Name = name
+func (w ProcessSummaryWorker) WithName(name string) Worker {
+	w.Name = events.WorkerName(name)
 	return w
 }
 
-func (w ProcessSummaryWorker) GetName() string {
+func (w ProcessSummaryWorker) GetName() events.WorkerName {
 	return w.Name
 }
 
@@ -75,7 +75,7 @@ func (w ProcessSummaryWorker) Run(ctx context.Context) error {
 	}
 }
 
-func (w ProcessSummaryWorker) sendMessageReceivedEvent(ctx context.Context, receiverID int) {
+func (w ProcessSummaryWorker) sendMessageReceivedEvent(ctx context.Context, receiverID robot.ID) {
 	select {
 	case w.Event <- events.Event{
 		EventType: events.EventMessageReceived,

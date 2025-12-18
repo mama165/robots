@@ -25,6 +25,6 @@ func (p QuiescenceDetectorProcessor) Handle(event Event) {
 			p.log.Error(errors.ErrInvalidPayload.Error())
 		}
 		elapsed := time.Now().Sub(payload.LastActivity.Date())
-		p.log.Debug(fmt.Sprintf("Robot %d last activity was %s ago", payload.RobotID, durafmt.Parse(elapsed)))
+		p.log.Debug(fmt.Sprintf("Robot %d last activity was %s ago", payload.ID, durafmt.Parse(elapsed)))
 	}
 }
