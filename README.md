@@ -2,17 +2,16 @@
 
 This project is a **distributed systems simulation** where multiple autonomous robots collaborate to reconstruct a shared secret using a **gossip / anti-entropy protocol**.
 
-Each robot initially holds **only a subset of the secret**, split into indexed words.  
-Through unreliable, asynchronous communication, robots progressively exchange missing information until **one robot eventually reconstructs the full secret** and writes it to disk.
+Each robot initially holds **only a subset of the secret**, split into indexed words. Through unreliable, asynchronous communication, robots progressively exchange missing information until **one robot eventually reconstructs the full secret and writes it exactly once**.
 
-This project is **not** a chat, **not** an HTTP API, and **not** a CRUD service.  
-It is a **laboratory for reasoning about distributed systems behavior**.
+This project is **not** a chat, **not** an HTTP API, and **not** a CRUD service.
+It is a **laboratory for reasoning about distributed systems behavior, failure modes, and observability**.
 
 ---
 
 ## 🎯 What problem does this project simulate?
 
-This simulation models a **distributed knowledge convergence problem** under real-world conditions:
+The simulation models a **distributed knowledge convergence problem** under realistic conditions:
 
 * No central coordinator
 * No guaranteed message delivery
@@ -20,245 +19,141 @@ This simulation models a **distributed knowledge convergence problem** under rea
 * No synchronous communication
 * No shared memory
 
-It demonstrates how **eventual consistency** can be achieved despite:
+Despite these constraints, the system must **eventually converge** toward a correct and complete state.
+
+The project demonstrates how **eventual consistency** can be achieved in the presence of:
 
 * message loss
 * message duplication
-* random delays
+* message reordering
+* partial failures
 * concurrent execution
-* partial knowledge
-
-This pattern is commonly found in:
-
-* gossip protocols
-* monitoring agents (e.g. Datadog-like agents)
-* peer-to-peer systems
-* distributed caches
-* CRDT-based systems
 
 ---
 
-## 🧩 High-Level Architecture
+## 🧠 Core distributed systems concepts illustrated
 
-Each robot is an **independent concurrent system** composed of multiple workers.
-Robots **never share memory** and only communicate through **asynchronous message passing**.
+This project is intentionally designed to surface *fundamental distributed systems principles*:
 
-### Robot internal workers
+### Gossip & Anti-Entropy
 
-Each robot runs the following goroutines:
+* Robots periodically exchange *summaries* of their local state.
+* Missing information is requested and propagated incrementally.
+* No robot ever sends the full state unless necessary.
 
-#### 1. Gossip Sender Worker
-* Periodically selects another robot at random
-* Sends a `GossipSummary` containing:
-   * the indexes it already knows
-   * its own robot ID
-* Messages may be:
-   * dropped
-   * duplicated
-   * rejected due to buffer saturation
+### Invariants as Consistency Boundaries
 
-#### 2. Summary Processor (Anti-Entropy Worker)
-* Receives a `GossipSummary`
-* Computes which secret parts the sender is missing
-* Replies with a `GossipUpdate`
-* Implements **anti-entropy reconciliation**
+The system enforces strong local invariants:
 
-#### 3. Update Processor Worker
-* Receives `GossipUpdate` messages
-* Merges secret parts into local state
-* Enforces **strong invariants** via a single merge function
+* **Monotonicity**: secret parts are never removed
+* **Uniqueness**: a given index maps to exactly one word
+* **Idempotence**: duplicate messages have no effect
 
-#### 4. Supervisor Worker
-* Observes robot state evolution
-* Detects:
-   * full secret reconstruction
-   * quiescence (no recent updates)
-* Handles panics from invariant violations
-* Restarts failed workers when needed
+Invariant violations are treated as **fatal errors** and intentionally trigger panics to test supervision behavior.
 
-All workers:
-* run concurrently
-* communicate via buffered channels
-* can be stopped via context cancellation
+### Eventual Convergence
 
-There is **no global coordinator**.
+* No robot knows when the system is "done" globally.
+* Completion is detected locally using:
+
+  * completeness checks (no missing indexes)
+  * a quiet period (quiescence detection)
 
 ---
 
-## 🧠 Core Design Principles
+## 🧵 Concurrency & Execution Model
 
-### 1. Monotonic State Growth (Strong Invariant)
+Each robot is composed of **independent workers**, each with a single responsibility:
 
-A robot **never forgets** a word once learned.
+* gossip initiation
+* summary processing
+* secret merging
+* quiescence detection
+* convergence detection
 
-* Secret parts are immutable
-* No deletion
-* No overwrite
-* No rollback
-
-This guarantees **eventual convergence**.
-
----
-
-### 2. Idempotent Message Processing
-
-Messages can be:
-
-* duplicated
-* received out of order
-* replayed
-
-Robots explicitly ignore already-known secret parts **when they are identical**.
-
-Result:
-
-* duplication is harmless
-* retries are safe
-* the system is resilient by design
-
----
-
-### 3. Order Independence
-
-Internally, secret parts are stored **unordered**.  
-Ordering is applied **only at read time**, based on word indexes.
-
-This cleanly separates:
-
-* internal state representation
-* final deterministic output
-
-The final secret is **always reconstructed in the correct order**, regardless of message arrival order.
-
----
-
-### 4. No Locks, No Global Synchronization
-
-Despite heavy concurrency:
-
-* no mutexes
-* no global locks
-* no shared writable state
-
-Correctness is ensured **by invariants**, not by synchronization.
-
-This mirrors real-world distributed systems where locks do not scale.
-
----
-
-## 🔒 Invariant Enforcement & Consistency Boundary
-
-All mutations of a robot’s local state go through a **single consistency boundary**:
-
-**MergeSecretPart()** function guarantees:
-
-* monotonic state growth
-* index → word immutability
-* idempotent updates
-
-If conflicting data is received for the same index, the program **panics deliberately**.
-
-Such panics are:
-* caught by the supervisor
-* logged
-* followed by a worker restart
-
-This models **fail-fast correctness** inside an unreliable environment.
-
----
-
-## 📡 Gossip & Anti-Entropy Protocol
-
-The protocol follows a classic anti-entropy pattern:
-
-1. A robot selects a random peer
-2. Sends a summary of known indexes
-3. The peer computes missing parts
-4. Sends back updates
-5. The sender merges new information
-
-This exchange is:
+Workers communicate **exclusively through channels** and are:
 
 * asynchronous
-* unordered
-* lossy
-* idempotent
+* restartable
+* isolated from each other
 
-Yet it converges.
-
----
-
-## ⚠️ Failure Modes Simulated
-
-| Failure Type        | Description                         |
-|--------------------|-------------------------------------|
-| Message loss        | Messages may be randomly dropped    |
-| Message duplication | Messages may be sent multiple times |
-| Buffer saturation   | Channels may reject messages        |
-| Unordered delivery  | No ordering guarantees              |
-| Concurrency         | Independent goroutines per robot    |
+This mirrors actor-like systems and highlights the cost of coordination.
 
 ---
 
-## 🕰️ Completion & Stability Detection
+## 🔁 Supervision & Fault Tolerance
 
-A robot is considered a winner when:
+All workers are supervised:
 
-* it has reconstructed the **full secret**
-* no updates were received for a configurable **quiet period**
+* panics are recovered
+* failed workers are automatically restarted
+* failures are isolated and do not crash the system
 
-Time is used **only as a stability heuristic**, not as a correctness mechanism.
+This supervision model is **inspired by Erlang/OTP**, adapted to Go:
 
----
-
-## 🏆 Winner Selection
-
-Multiple robots may reach completion.
-
-To avoid race conditions:
-
-* a non-blocking winner channel is used
-* only the first robot succeeds
-* others stop gracefully
-
-The winner writes the reconstructed secret to disk.
+* workers are intentionally simple
+* robustness is achieved through supervision, not defensive coding
 
 ---
 
-## 🚫 Explicitly Out of Scope
+## 📊 Events, Metrics & Observability
 
-* Byzantine behavior
-* Permanent partitions
-* Security / authentication
-* Persistence across restarts
-* Clock synchronization guarantees
+The system emits structured events to describe its internal behavior:
+
+* messages sent / received
+* message loss, duplication, reordering
+* invariant violations
+* worker restarts
+* channel capacity pressure
+* quiescence signals
+
+Events are processed through a **chain-of-responsibility pipeline**, enabling:
+
+* metrics aggregation
+* logging
+* anomaly detection
+
+Observability is a *first-class concern*, not an afterthought.
 
 ---
 
-## 🔮 Possible Extensions
+## 🧪 Testing Philosophy
 
-* Logical clocks (Lamport / vector)
-* Message IDs and explicit deduplication
-* Failure suspicion
-* Metrics & observability
-* CRDT-based state
-* Alternative payloads
-* Other transports (QUIC, BLE, WebRTC)
+The test suite focuses on **behavioral guarantees**, not implementation details:
+
+* eventual convergence under loss and duplication
+* idempotence and invariant enforcement
+* exactly-once secret writing
+* no false positives before quiescence
+* correct behavior under timeouts
+
+Many tests rely on **Eventually-style assertions**, which are essential when validating asynchronous, distributed behavior.
 
 ---
 
-## 📦 Protobuf Code Generation
+## 🧩 What this project is *really* about
 
-Proto files are located in `/proto`.
+Beyond the surface simulation, this project explores:
 
-Generate Go code from the project root:
-```bash
-docker build -t protoc-image .
-```
+* how to structure concurrent systems
+* where to enforce correctness
+* how failures should be handled, not hidden
+* how to *observe* a live distributed system
 
-```bash
-docker run --rm -v "$PWD:/defs" protoc-image \
-  -I . \
-  --go_out=paths=source_relative:. \
-  --go-grpc_out=paths=source_relative:. \
-  proto/robot.proto
+It is designed as a **thinking tool** as much as a codebase.
+
+---
+
+## 🚧 What’s next
+
+The next step is **not adding more logic**, but improving **human visibility**:
+
+* introducing a lightweight UI (likely a TUI)
+* visualizing convergence, instability, and supervision behavior
+* turning logs and metrics into an intuitive, live system view
+
+The goal is to make the system **understandable at runtime**, without changing its behavior.
+
+---
+
+If you are interested in distributed systems, failure handling, or observability-driven design, this repository is meant to be read, explored, and experimented with — not just executed.
