@@ -8,31 +8,31 @@ import (
 	"time"
 )
 
-// MetricWorker periodically reports the current channel capacity and length.
+// ChannelCapacityWorker periodically reports the current channel capacity and length.
 // Reading len(channel) and cap(channel) is non-blocking, so this won't interfere
 // with other goroutines. It's okay if an event is dropped occasionally because
 // metrics are sampled periodically.
-type MetricWorker struct {
+type ChannelCapacityWorker struct {
 	config conf.Config
 	log    *slog.Logger
 	name   events.WorkerName
 	event  chan events.Event
 }
 
-func NewMetricWorker(config conf.Config, log *slog.Logger, event chan events.Event) MetricWorker {
-	return MetricWorker{config: config, log: log, event: event}
+func NewChannelCapacityWorker(config conf.Config, log *slog.Logger, event chan events.Event) ChannelCapacityWorker {
+	return ChannelCapacityWorker{config: config, log: log, event: event}
 }
 
-func (w MetricWorker) WithName(name string) Worker {
+func (w ChannelCapacityWorker) WithName(name string) Worker {
 	w.name = events.WorkerName(name)
 	return w
 }
 
-func (w MetricWorker) GetName() events.WorkerName {
-	return events.WorkerName(w.name)
+func (w ChannelCapacityWorker) GetName() events.WorkerName {
+	return w.name
 }
 
-func (w MetricWorker) Run(ctx context.Context) error {
+func (w ChannelCapacityWorker) Run(ctx context.Context) error {
 	ticker := time.NewTicker(w.config.MetricInterval)
 	defer ticker.Stop()
 	for {

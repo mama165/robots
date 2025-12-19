@@ -64,7 +64,7 @@ func main() {
 	// One worker is responsible for writing the secret
 	// One worker to handle the events
 	supervisor.Add(
-		workers.NewMetricWorker(config, log, event).WithName("channel capacity worker"),
+		workers.NewChannelCapacityWorker(config, log, event).WithName("channel capacity worker"),
 		workers.NewSnapshotWorker(config, log, event),
 		workers.NewDispatcher(log, event).Add(
 			events.NewInvariantViolationProcessor(log, counter),
