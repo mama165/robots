@@ -24,6 +24,7 @@ const (
 	EventQuiescenceDetector                   EventType = "QUIESCENCE_DETECTOR"
 	EventWorkerRestartedAfterPanic            EventType = "WORKER_RESTARTED_AFTER_PANIC"
 	EventChannelCapacity                      EventType = "CHANNEL_CAPACITY"
+	EventAllConverged                         EventType = "ALL_CONVERGED"
 )
 
 type Event struct {
@@ -63,6 +64,10 @@ type ChannelCapacityEvent struct {
 	WorkerName WorkerName
 	Capacity   int
 	Length     int
+}
+
+type AllConvergedEvent struct {
+	AllConverged bool
 }
 
 type LastActivity time.Time

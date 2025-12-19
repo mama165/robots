@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// ObservabilityWorker Store all metrics of workers
-type ObservabilityWorker struct {
+// Observability Store all metrics of workers
+type Observability struct {
 	mu                 sync.Mutex
 	timestamp          time.Time
 	messagesSent       map[int]int
@@ -18,10 +18,11 @@ type ObservabilityWorker struct {
 	workerRestarted    map[string]int
 	lastActive         time.Time
 	channelCapacity    map[string]ChannelCapacity
+	allConverged       bool
 }
 
-func NewObservabilityWorker() *ObservabilityWorker {
-	return &ObservabilityWorker{
+func NewObservability() *Observability {
+	return &Observability{
 		timestamp:          time.Now(),
 		messagesSent:       make(map[int]int),
 		messagesLost:       0,
@@ -30,6 +31,7 @@ func NewObservabilityWorker() *ObservabilityWorker {
 		messagesReordered:  0,
 		invariantViolation: make(map[int]int),
 		lastActive:         time.Now(),
+		allConverged:       false,
 		channelCapacity:    make(map[string]ChannelCapacity),
 	}
 }
@@ -39,56 +41,62 @@ type ChannelCapacity struct {
 	Length   int
 }
 
-func (s *ObservabilityWorker) IncSent(id int) {
+func (s *Observability) IncSent(id int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messagesSent[id]++
 }
 
-func (s *ObservabilityWorker) IncLost() {
+func (s *Observability) IncLost() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messagesLost++
 }
 
-func (s *ObservabilityWorker) IncReceived(id int) {
+func (s *Observability) IncReceived(id int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messagesReceived[id]++
 }
 
-func (s *ObservabilityWorker) IncDuplicated() {
+func (s *Observability) IncDuplicated() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messagesDuplicated++
 }
 
-func (s *ObservabilityWorker) IncReordered() {
+func (s *Observability) IncReordered() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messagesReordered++
 }
 
-func (s *ObservabilityWorker) IncInvariantViolation(id int) {
+func (s *Observability) IncInvariantViolation(id int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.invariantViolation[id]++
 }
 
-func (s *ObservabilityWorker) IncWorkerRestart(name string) {
+func (s *Observability) IncWorkerRestart(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.workerRestarted[name]++
 }
 
-func (s *ObservabilityWorker) UpdateLastActivity(activity time.Time) {
+func (s *Observability) UpdateLastActivity(activity time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lastActive = activity
 }
 
-func (s *ObservabilityWorker) UpdateCapacity(name string, cap, len int) {
+func (s *Observability) UpdateCapacity(name string, cap, len int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.channelCapacity[name] = ChannelCapacity{Capacity: cap, Length: len}
+}
+
+func (s *Observability) HasConverged(converged bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.allConverged = converged
 }

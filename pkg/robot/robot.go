@@ -166,8 +166,8 @@ func findSecretPart(secretParts []SecretPart, secretPart SecretPart) (SecretPart
 // - and the last word ends with the given end-of-secret marker.
 // This prevents false positives caused by partial, unordered, or duplicated gossip messages.
 func (r *Robot) IsSecretCompleted(endOfSecret string) bool {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	parts := r.SecretParts
 	if len(parts) == 0 {
 		return false

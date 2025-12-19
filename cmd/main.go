@@ -65,8 +65,9 @@ func main() {
 	// One worker is responsible for writing the secret
 	// One worker to handle the events
 	supervisor.Add(
+		workers.NewConvergenceObserverWorker(config, log, robots, domainEvent).WithName("convergence observer worker"),
 		workers.NewChannelCapacityWorker(config, log, domainEvent).WithName("channel capacity worker"),
-		workers.NewSnapshotWorker(config, log, telemetryEvent).WithName("snapshot worker"),
+		workers.NewObservabilityWorker(config, log, telemetryEvent).WithName("observability worker"),
 		workers.NewEventFanout(log, domainEvent, telemetryEvent).Add(
 			events.NewInvariantViolationHandler(log, counter),
 			events.NewMessageDuplicatedHandler(log, counter),
@@ -76,7 +77,7 @@ func main() {
 			events.NewWorkerRestartedAfterPanicHandler(log, counter),
 			events.NewChannelCapacityHandler(log, config.LowCapacityThreshold),
 			events.NewQuiescenceDetectorHandler(log),
-		).WithName("metric worker"),
+		).WithName("event fanout worker"),
 	)
 	supervisor.Run()
 

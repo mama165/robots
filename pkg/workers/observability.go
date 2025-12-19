@@ -10,28 +10,28 @@ import (
 	"time"
 )
 
-type SnapshotWorker struct {
-	name                events.WorkerName
-	config              conf.Config
-	log                 *slog.Logger
-	telemetryEvent      chan events.Event
-	observabilityWorker *observabilities.ObservabilityWorker
+type ObservabilityWorker struct {
+	name           events.WorkerName
+	config         conf.Config
+	log            *slog.Logger
+	telemetryEvent chan events.Event
+	observability  *observabilities.Observability
 }
 
-func NewSnapshotWorker(config conf.Config, log *slog.Logger, telemetryEvent chan events.Event) Worker {
-	return SnapshotWorker{config: config, log: log, telemetryEvent: telemetryEvent, observabilityWorker: observabilities.NewObservabilityWorker()}
+func NewObservabilityWorker(config conf.Config, log *slog.Logger, telemetryEvent chan events.Event) Worker {
+	return ObservabilityWorker{config: config, log: log, telemetryEvent: telemetryEvent, observability: observabilities.NewObservability()}
 }
 
-func (s SnapshotWorker) WithName(name string) Worker {
+func (s ObservabilityWorker) WithName(name string) Worker {
 	s.name = events.WorkerName(name)
 	return s
 }
 
-func (s SnapshotWorker) GetName() events.WorkerName {
+func (s ObservabilityWorker) GetName() events.WorkerName {
 	return s.name
 }
 
-func (s SnapshotWorker) Run(ctx context.Context) error {
+func (s ObservabilityWorker) Run(ctx context.Context) error {
 	ticker := time.NewTicker(s.config.SnapshotInterval)
 	defer ticker.Stop()
 	for {
@@ -51,49 +51,55 @@ func (s SnapshotWorker) Run(ctx context.Context) error {
 	}
 }
 
-func (s SnapshotWorker) handleEvent(event events.Event) {
+func (s ObservabilityWorker) handleEvent(event events.Event) {
 	switch event.EventType {
 	case events.EventMessageSent:
 		payload, ok := event.Payload.(events.MessageSentEvent)
 		if !ok {
 			s.log.Error(errors.ErrInvalidPayload.Error())
 		}
-		s.observabilityWorker.IncSent(payload.SenderID.ToInt())
+		s.observability.IncSent(payload.SenderID.ToInt())
 	case events.EventMessageReceived:
 		payload, ok := event.Payload.(events.MessageReceivedEvent)
 		if !ok {
 			s.log.Error(errors.ErrInvalidPayload.Error())
 		}
-		s.observabilityWorker.IncReceived(payload.ReceiverID.ToInt())
+		s.observability.IncReceived(payload.ReceiverID.ToInt())
 	case events.EventMessageDuplicated:
-		s.observabilityWorker.IncDuplicated()
+		s.observability.IncDuplicated()
 	case events.EventMessageReordered:
-		s.observabilityWorker.IncReordered()
+		s.observability.IncReordered()
 	case events.EventMessageLost:
-		s.observabilityWorker.IncLost()
+		s.observability.IncLost()
 	case events.EventInvariantViolationSameIndexDiffWords:
 		payload, ok := event.Payload.(events.InvariantViolationEvent)
 		if !ok {
 			s.log.Error(errors.ErrInvalidPayload.Error())
 		}
-		s.observabilityWorker.IncInvariantViolation(payload.ID.ToInt())
+		s.observability.IncInvariantViolation(payload.ID.ToInt())
 	case events.EventQuiescenceDetector:
 		payload, ok := event.Payload.(events.QuiescenceDetectorEvent)
 		if !ok {
 			s.log.Error(errors.ErrInvalidPayload.Error())
 		}
-		s.observabilityWorker.UpdateLastActivity(payload.LastActivity.Date())
+		s.observability.UpdateLastActivity(payload.LastActivity.Date())
 	case events.EventWorkerRestartedAfterPanic:
 		payload, ok := event.Payload.(events.WorkerRestartedAfterPanicEvent)
 		if !ok {
 			s.log.Error(errors.ErrInvalidPayload.Error())
 		}
-		s.observabilityWorker.IncWorkerRestart(payload.WorkerName.ToString())
+		s.observability.IncWorkerRestart(payload.WorkerName.ToString())
 	case events.EventChannelCapacity:
 		payload, ok := event.Payload.(events.ChannelCapacityEvent)
 		if !ok {
 			s.log.Error(errors.ErrInvalidPayload.Error())
 		}
-		s.observabilityWorker.UpdateCapacity(payload.WorkerName.ToString(), payload.Capacity, payload.Length)
+		s.observability.UpdateCapacity(payload.WorkerName.ToString(), payload.Capacity, payload.Length)
+	case events.EventAllConverged:
+		payload, ok := event.Payload.(events.AllConvergedEvent)
+		if !ok {
+			s.log.Error(errors.ErrInvalidPayload.Error())
+		}
+		s.observability.HasConverged(payload.AllConverged)
 	}
 }
