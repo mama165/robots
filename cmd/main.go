@@ -32,7 +32,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(timeoutCtx, syscall.SIGINT) // Handle CTRL+C
 	defer cancel()
 	defer stop()
-	event := make(chan events.Event, config.BufferSize)
+	criticalEvent := make(chan events.Event, config.BufferSize)
+	observableEvent := make(chan events.Event, config.BufferSize)
 	secretManager := robot.SecretManager{Config: config}
 	secret := secretManager.SplitSecret(config.Secret)
 	robots := secretManager.CreateRobots(secret)
@@ -54,19 +55,19 @@ func main() {
 	// Only few workers run for each robot
 	for _, r := range robots {
 		supervisor.Add(
-			workers.NewProcessSummaryWorker(log, r, robots, event).WithName("summary worker"),
-			workers.NewMergeSecretWorker(log, r, event).WithName("update worker"),
+			workers.NewProcessSummaryWorker(log, r, robots, criticalEvent).WithName("summary worker"),
+			workers.NewMergeSecretWorker(log, r, criticalEvent).WithName("update worker"),
 			workers.NewConvergenceDetectorWorker(config, log, r, winner, once, file).WithName("convergence detector worker"),
-			workers.NewStartGossipWorker(config, log, r, robots, event).WithName("start gossip worker"),
-			workers.NewQuiescenceDetectorWorker(config, log, r, event, 0).WithName("quiescence worker"),
+			workers.NewStartGossipWorker(config, log, r, robots, criticalEvent).WithName("start gossip worker"),
+			workers.NewQuiescenceDetectorWorker(config, log, r, criticalEvent, 0).WithName("quiescence worker"),
 		)
 	}
 	// One worker is responsible for writing the secret
 	// One worker to handle the events
 	supervisor.Add(
-		workers.NewChannelCapacityWorker(config, log, event).WithName("channel capacity worker"),
-		workers.NewSnapshotWorker(config, log, event).WithName("snapshot worker"),
-		workers.NewDispatcher(log, event).Add(
+		workers.NewChannelCapacityWorker(config, log, criticalEvent).WithName("channel capacity worker"),
+		workers.NewSnapshotWorker(config, log, observableEvent).WithName("snapshot worker"),
+		workers.NewDispatcher(log, criticalEvent, observableEvent).Add(
 			events.NewInvariantViolationProcessor(log, counter),
 			events.NewMessageDuplicatedProcessor(log, counter),
 			events.NewMessageReceivedProcessor(log, counter),

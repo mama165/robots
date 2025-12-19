@@ -58,17 +58,26 @@ func (w MergeSecretWorker) Run(ctx context.Context) error {
 			}
 			secretParts := robot.FromSecretPartsPb(gossipUpdate.SecretParts)
 			for _, secretPart := range secretParts {
-				defer func() {
-					if r := recover(); r != nil {
-						sendInvariantViolationEvent(ctx, w.Robot, w.Event)
-					}
-				}()
-				w.Robot.MergeSecretPart(secretPart)
+				w.mergeSecretPart(sendInvariantViolationEvent)(ctx, secretPart)
 			}
 		case <-ctx.Done():
 			w.Log.Debug("Context done, stopping event send")
 			return nil
 		}
+	}
+}
+
+func (w MergeSecretWorker) mergeSecretPart(
+	recoverFunc func(ctx context.Context, r *robot.Robot, event chan events.Event),
+) func(ctx context.Context, secretPart robot.SecretPart) {
+	return func(ctx context.Context, part robot.SecretPart) {
+		defer func() {
+			if r := recover(); r != nil {
+				recoverFunc(ctx, w.Robot, w.Event)
+			}
+		}()
+		w.Robot.MergeSecretPart(part)
+		return
 	}
 }
 
