@@ -65,7 +65,7 @@ func main() {
 	// One worker to handle the events
 	supervisor.Add(
 		workers.NewChannelCapacityWorker(config, log, event).WithName("channel capacity worker"),
-		workers.NewSnapshotWorker(config, log, event),
+		workers.NewSnapshotWorker(config, log, event).WithName("snapshot worker"),
 		workers.NewDispatcher(log, event).Add(
 			events.NewInvariantViolationProcessor(log, counter),
 			events.NewMessageDuplicatedProcessor(log, counter),
