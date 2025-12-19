@@ -1,13 +1,12 @@
-package observability
+package observabilities
 
 import (
 	"sync"
 	"time"
 )
 
-// EventSnapshot Snapshot central
-// Store all metrics of workers
-type EventSnapshot struct {
+// ObservabilityWorker Store all metrics of workers
+type ObservabilityWorker struct {
 	mu                 sync.Mutex
 	timestamp          time.Time
 	messagesSent       map[int]int
@@ -21,8 +20,8 @@ type EventSnapshot struct {
 	channelCapacity    map[string]ChannelCapacity
 }
 
-func NewEventSnapshot() *EventSnapshot {
-	return &EventSnapshot{
+func NewObservabilityWorker() *ObservabilityWorker {
+	return &ObservabilityWorker{
 		timestamp:          time.Now(),
 		messagesSent:       make(map[int]int),
 		messagesLost:       0,
@@ -40,55 +39,55 @@ type ChannelCapacity struct {
 	Length   int
 }
 
-func (s *EventSnapshot) IncSent(id int) {
+func (s *ObservabilityWorker) IncSent(id int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messagesSent[id]++
 }
 
-func (s *EventSnapshot) IncLost() {
+func (s *ObservabilityWorker) IncLost() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messagesLost++
 }
 
-func (s *EventSnapshot) IncReceived(id int) {
+func (s *ObservabilityWorker) IncReceived(id int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messagesReceived[id]++
 }
 
-func (s *EventSnapshot) IncDuplicated() {
+func (s *ObservabilityWorker) IncDuplicated() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messagesDuplicated++
 }
 
-func (s *EventSnapshot) IncReordered() {
+func (s *ObservabilityWorker) IncReordered() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messagesReordered++
 }
 
-func (s *EventSnapshot) IncInvariantViolation(id int) {
+func (s *ObservabilityWorker) IncInvariantViolation(id int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.invariantViolation[id]++
 }
 
-func (s *EventSnapshot) IncWorkerRestart(name string) {
+func (s *ObservabilityWorker) IncWorkerRestart(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.workerRestarted[name]++
 }
 
-func (s *EventSnapshot) UpdateLastActivity(activity time.Time) {
+func (s *ObservabilityWorker) UpdateLastActivity(activity time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lastActive = activity
 }
 
-func (s *EventSnapshot) UpdateCapacity(name string, cap, len int) {
+func (s *ObservabilityWorker) UpdateCapacity(name string, cap, len int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.channelCapacity[name] = ChannelCapacity{Capacity: cap, Length: len}

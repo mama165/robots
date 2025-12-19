@@ -32,8 +32,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(timeoutCtx, syscall.SIGINT) // Handle CTRL+C
 	defer cancel()
 	defer stop()
-	criticalEvent := make(chan events.Event, config.BufferSize)
-	observableEvent := make(chan events.Event, config.BufferSize)
+	domainEvent := make(chan events.Event, config.BufferSize)
+	telemetryEvent := make(chan events.Event, config.BufferSize)
 	secretManager := robot.SecretManager{Config: config}
 	secret := secretManager.SplitSecret(config.Secret)
 	robots := secretManager.CreateRobots(secret)
@@ -55,27 +55,27 @@ func main() {
 	// Only few workers run for each robot
 	for _, r := range robots {
 		supervisor.Add(
-			workers.NewProcessSummaryWorker(log, r, robots, criticalEvent).WithName("summary worker"),
-			workers.NewMergeSecretWorker(log, r, criticalEvent).WithName("update worker"),
+			workers.NewProcessSummaryWorker(log, r, robots, domainEvent).WithName("summary worker"),
+			workers.NewMergeSecretWorker(log, r, domainEvent).WithName("update worker"),
 			workers.NewConvergenceDetectorWorker(config, log, r, winner, once, file).WithName("convergence detector worker"),
-			workers.NewStartGossipWorker(config, log, r, robots, criticalEvent).WithName("start gossip worker"),
-			workers.NewQuiescenceDetectorWorker(config, log, r, criticalEvent, 0).WithName("quiescence worker"),
+			workers.NewStartGossipWorker(config, log, r, robots, domainEvent).WithName("start gossip worker"),
+			workers.NewQuiescenceDetectorWorker(config, log, r, domainEvent, 0).WithName("quiescence worker"),
 		)
 	}
 	// One worker is responsible for writing the secret
 	// One worker to handle the events
 	supervisor.Add(
-		workers.NewChannelCapacityWorker(config, log, criticalEvent).WithName("channel capacity worker"),
-		workers.NewSnapshotWorker(config, log, observableEvent).WithName("snapshot worker"),
-		workers.NewDispatcher(log, criticalEvent, observableEvent).Add(
-			events.NewInvariantViolationProcessor(log, counter),
-			events.NewMessageDuplicatedProcessor(log, counter),
-			events.NewMessageReceivedProcessor(log, counter),
-			events.NewMessageReorderedProcessor(log, counter),
-			events.NewMessageSentProcessor(log, counter),
-			events.NewWorkerRestartedAfterPanicProcessor(log, counter),
-			events.NewChannelCapacityProcessor(log, config.LowCapacityThreshold),
-			events.NewQuiescenceDetectorProcessor(log),
+		workers.NewChannelCapacityWorker(config, log, domainEvent).WithName("channel capacity worker"),
+		workers.NewSnapshotWorker(config, log, telemetryEvent).WithName("snapshot worker"),
+		workers.NewEventFanout(log, domainEvent, telemetryEvent).Add(
+			events.NewInvariantViolationHandler(log, counter),
+			events.NewMessageDuplicatedHandler(log, counter),
+			events.NewMessageReceivedHandler(log, counter),
+			events.NewMessageReorderedHandler(log, counter),
+			events.NewMessageSentHandler(log, counter),
+			events.NewWorkerRestartedAfterPanicHandler(log, counter),
+			events.NewChannelCapacityHandler(log, config.LowCapacityThreshold),
+			events.NewQuiescenceDetectorHandler(log),
 		).WithName("metric worker"),
 	)
 	supervisor.Run()

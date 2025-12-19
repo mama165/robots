@@ -14,14 +14,14 @@ import (
 
 // MergeSecretWorker Fetch all missing parts coming from anybody
 type MergeSecretWorker struct {
-	Log   *slog.Logger
-	Name  events.WorkerName
-	Robot *robot.Robot
-	Event chan events.Event
+	Log         *slog.Logger
+	Name        events.WorkerName
+	Robot       *robot.Robot
+	DomainEvent chan events.Event
 }
 
-func NewMergeSecretWorker(logger *slog.Logger, robot *robot.Robot, event chan events.Event) MergeSecretWorker {
-	return MergeSecretWorker{Log: logger, Robot: robot, Event: event}
+func NewMergeSecretWorker(logger *slog.Logger, robot *robot.Robot, DomainEvent chan events.Event) MergeSecretWorker {
+	return MergeSecretWorker{Log: logger, Robot: robot, DomainEvent: DomainEvent}
 }
 
 func (w MergeSecretWorker) WithName(name string) Worker {
@@ -61,7 +61,7 @@ func (w MergeSecretWorker) Run(ctx context.Context) error {
 				w.mergeSecretPart(sendInvariantViolationEvent)(ctx, secretPart)
 			}
 		case <-ctx.Done():
-			w.Log.Debug("Context done, stopping event send")
+			w.Log.Debug("Context done, stopping domainEvent send")
 			return nil
 		}
 	}
@@ -73,7 +73,7 @@ func (w MergeSecretWorker) mergeSecretPart(
 	return func(ctx context.Context, part robot.SecretPart) {
 		defer func() {
 			if r := recover(); r != nil {
-				recoverFunc(ctx, w.Robot, w.Event)
+				recoverFunc(ctx, w.Robot, w.DomainEvent)
 			}
 		}()
 		w.Robot.MergeSecretPart(part)

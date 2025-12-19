@@ -6,17 +6,17 @@ import (
 	"sync"
 )
 
-type MessageReorderedProcessor struct {
+type MessageReorderedHandler struct {
 	log     *slog.Logger
 	mu      sync.Mutex
 	counter *Counter
 }
 
-func NewMessageReorderedProcessor(log *slog.Logger, counter *Counter) *MessageReorderedProcessor {
-	return &MessageReorderedProcessor{log: log, counter: counter}
+func NewMessageReorderedHandler(log *slog.Logger, counter *Counter) *MessageReorderedHandler {
+	return &MessageReorderedHandler{log: log, counter: counter}
 }
 
-func (p *MessageReorderedProcessor) Handle(event Event) {
+func (p *MessageReorderedHandler) Handle(event Event) {
 	switch event.EventType {
 	case EventMessageReordered:
 		_, ok := event.Payload.(MessageReorderedEvent)

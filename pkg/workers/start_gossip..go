@@ -15,16 +15,16 @@ import (
 )
 
 type StartGossipWorker struct {
-	Config conf.Config
-	Log    *slog.Logger
-	Name   events.WorkerName
-	Robot  *robot.Robot
-	Robots []*robot.Robot
-	Event  chan events.Event
+	Config      conf.Config
+	Log         *slog.Logger
+	Name        events.WorkerName
+	Robot       *robot.Robot
+	Robots      []*robot.Robot
+	DomainEvent chan events.Event
 }
 
-func NewStartGossipWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, robots []*robot.Robot, event chan events.Event) StartGossipWorker {
-	return StartGossipWorker{Config: config, Log: log, Robot: robot, Robots: robots, Event: event}
+func NewStartGossipWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, robots []*robot.Robot, DomainEvent chan events.Event) StartGossipWorker {
+	return StartGossipWorker{Config: config, Log: log, Robot: robot, Robots: robots, DomainEvent: DomainEvent}
 }
 
 func (w StartGossipWorker) WithName(name string) Worker {
@@ -46,7 +46,7 @@ func (w StartGossipWorker) Run(ctx context.Context) error {
 			receiver := robot.ChooseRobot(sender, w.Robots)
 			w.ExchangeMessage(ctx, sender, receiver)
 		case <-ctx.Done():
-			w.Log.Debug("Context done, stopping event send")
+			w.Log.Debug("Context done, stopping domainEvent send")
 			return nil
 		}
 	}
@@ -87,7 +87,7 @@ func (w StartGossipWorker) ExchangeMessage(ctx context.Context, sender, receiver
 			case receiver.GossipSummary <- msgSender:
 				w.sendMessageSentEvent(ctx, sender)
 			case <-ctx.Done():
-				w.Log.Debug("Context done, stopping event send")
+				w.Log.Debug("Context done, stopping domainEvent send")
 				return
 			default:
 				w.Log.Debug("StartGossip channel is full, dropping message")
@@ -98,14 +98,14 @@ func (w StartGossipWorker) ExchangeMessage(ctx context.Context, sender, receiver
 
 func (w StartGossipWorker) sendMessageSentEvent(ctx context.Context, sender *robot.Robot) {
 	select {
-	case w.Event <- events.Event{
+	case w.DomainEvent <- events.Event{
 		EventType: events.EventMessageSent,
 		CreatedAt: time.Now().UTC(),
 		Payload:   events.MessageSentEvent{SenderID: sender.ID},
 	}:
 	case <-ctx.Done():
-		w.Log.Debug("Context done, stopping event send")
+		w.Log.Debug("Context done, stopping domainEvent send")
 	default:
-		w.Log.Debug("Buffer is full")
+		w.Log.Debug(fmt.Sprintf("[%s] Buffer is full", w.Name))
 	}
 }

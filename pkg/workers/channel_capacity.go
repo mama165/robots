@@ -10,17 +10,17 @@ import (
 
 // ChannelCapacityWorker periodically reports the current channel capacity and length.
 // Reading len(channel) and cap(channel) is non-blocking, so this won't interfere
-// with other goroutines. It's okay if an event is dropped occasionally because
+// with other goroutines. It's okay if an domainEvent is dropped occasionally because
 // metrics are sampled periodically.
 type ChannelCapacityWorker struct {
-	config conf.Config
-	log    *slog.Logger
-	name   events.WorkerName
-	event  chan events.Event
+	config      conf.Config
+	log         *slog.Logger
+	name        events.WorkerName
+	domainEvent chan events.Event
 }
 
-func NewChannelCapacityWorker(config conf.Config, log *slog.Logger, event chan events.Event) ChannelCapacityWorker {
-	return ChannelCapacityWorker{config: config, log: log, event: event}
+func NewChannelCapacityWorker(config conf.Config, log *slog.Logger, domainEvent chan events.Event) ChannelCapacityWorker {
+	return ChannelCapacityWorker{config: config, log: log, domainEvent: domainEvent}
 }
 
 func (w ChannelCapacityWorker) WithName(name string) Worker {
@@ -39,20 +39,20 @@ func (w ChannelCapacityWorker) Run(ctx context.Context) error {
 		select {
 		case <-ticker.C:
 			select {
-			case w.event <- events.Event{
+			case w.domainEvent <- events.Event{
 				EventType: events.EventChannelCapacity,
 				CreatedAt: time.Now().UTC(),
 				Payload: events.ChannelCapacityEvent{
 					WorkerName: w.name,
-					Capacity:   cap(w.event),
-					Length:     len(w.event),
+					Capacity:   cap(w.domainEvent),
+					Length:     len(w.domainEvent),
 				},
 			}:
 			default:
 				w.log.Debug("Buffer is full, channel capacity even is lost")
 			}
 		case <-ctx.Done():
-			w.log.Debug("Context done, stopping event send")
+			w.log.Debug("Context done, stopping domainEvent send")
 			return nil
 		}
 	}

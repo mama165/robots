@@ -114,6 +114,6 @@ func (s *Supervisor) sendRestartEvent(worker Worker) {
 	case <-s.Ctx.Done():
 		s.log.Info("Timeout ou Ctrl+C : arrêt de toutes les goroutines")
 	default:
-		s.log.Warn("CriticalEvent channel full, WorkerRestartedAfterPanic event dropped")
+		s.log.Warn("CriticalEvent channel full, WorkerRestartedAfterPanic domainEvent dropped")
 	}
 }

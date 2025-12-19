@@ -6,17 +6,17 @@ import (
 	"sync"
 )
 
-type MessageDuplicatedProcessor struct {
+type MessageDuplicatedHandler struct {
 	log     *slog.Logger
 	mu      sync.Mutex
 	counter *Counter
 }
 
-func NewMessageDuplicatedProcessor(log *slog.Logger, counter *Counter) *MessageDuplicatedProcessor {
-	return &MessageDuplicatedProcessor{log: log, counter: counter}
+func NewMessageDuplicatedHandler(log *slog.Logger, counter *Counter) *MessageDuplicatedHandler {
+	return &MessageDuplicatedHandler{log: log, counter: counter}
 }
 
-func (p *MessageDuplicatedProcessor) Handle(event Event) {
+func (p *MessageDuplicatedHandler) Handle(event Event) {
 	switch event.EventType {
 	case EventMessageDuplicated:
 		if _, ok := event.Payload.(MessageDuplicatedEvent); !ok {

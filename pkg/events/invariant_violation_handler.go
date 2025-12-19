@@ -7,17 +7,17 @@ import (
 	"sync"
 )
 
-type InvariantViolationProcessor struct {
+type InvariantViolationHandler struct {
 	log     *slog.Logger
 	mu      sync.Mutex
 	counter *Counter
 }
 
-func NewInvariantViolationProcessor(log *slog.Logger, counter *Counter) *InvariantViolationProcessor {
-	return &InvariantViolationProcessor{log: log, counter: counter}
+func NewInvariantViolationHandler(log *slog.Logger, counter *Counter) *InvariantViolationHandler {
+	return &InvariantViolationHandler{log: log, counter: counter}
 }
 
-func (p *InvariantViolationProcessor) Handle(event Event) {
+func (p *InvariantViolationHandler) Handle(event Event) {
 	switch event.EventType {
 	case EventInvariantViolationSameIndexDiffWords:
 		_, ok := event.Payload.(InvariantViolationEvent)

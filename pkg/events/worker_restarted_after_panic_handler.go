@@ -7,20 +7,20 @@ import (
 	"sync"
 )
 
-type WorkerRestartedAfterPanicProcessor struct {
+type WorkerRestartedAfterPanicHandler struct {
 	log     *slog.Logger
 	mu      sync.Mutex
 	counter *Counter
 }
 
-func NewWorkerRestartedAfterPanicProcessor(log *slog.Logger, counter *Counter) *WorkerRestartedAfterPanicProcessor {
-	return &WorkerRestartedAfterPanicProcessor{
+func NewWorkerRestartedAfterPanicHandler(log *slog.Logger, counter *Counter) *WorkerRestartedAfterPanicHandler {
+	return &WorkerRestartedAfterPanicHandler{
 		log:     log,
 		counter: counter,
 	}
 }
 
-func (p *WorkerRestartedAfterPanicProcessor) Handle(event Event) {
+func (p *WorkerRestartedAfterPanicHandler) Handle(event Event) {
 	switch event.EventType {
 	case EventWorkerRestartedAfterPanic:
 		payload, ok := event.Payload.(WorkerRestartedAfterPanicEvent)

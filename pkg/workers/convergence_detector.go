@@ -62,7 +62,7 @@ func (w ConvergenceDetectorWorker) Run(ctx context.Context) error {
 				w.tryWriteSecret()
 			}
 		case <-ctx.Done():
-			w.Log.Debug("Context done, stopping event send")
+			w.Log.Debug("Context done, stopping domainEvent send")
 			return nil
 		}
 	}

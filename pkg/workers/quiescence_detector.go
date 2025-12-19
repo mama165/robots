@@ -16,12 +16,12 @@ type QuiescenceDetectorWorker struct {
 	Name          events.WorkerName
 	log           *slog.Logger
 	robot         *robot.Robot
-	Event         chan events.Event
+	DomainEvent   chan events.Event
 	droppedEvents uint64
 }
 
-func NewQuiescenceDetectorWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, event chan events.Event, droppedEvents uint64) *QuiescenceDetectorWorker {
-	return &QuiescenceDetectorWorker{Config: config, log: log, robot: robot, Event: event, droppedEvents: droppedEvents}
+func NewQuiescenceDetectorWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, domainEvent chan events.Event, droppedEvents uint64) *QuiescenceDetectorWorker {
+	return &QuiescenceDetectorWorker{Config: config, log: log, robot: robot, DomainEvent: domainEvent, droppedEvents: droppedEvents}
 }
 
 func (w *QuiescenceDetectorWorker) WithName(name string) Worker {
@@ -49,7 +49,7 @@ func (w *QuiescenceDetectorWorker) Run(ctx context.Context) error {
 
 func (w *QuiescenceDetectorWorker) sendQuiescenceDetectorEvent(ctx context.Context, ID robot.ID) {
 	select {
-	case w.Event <- events.Event{
+	case w.DomainEvent <- events.Event{
 		EventType: events.EventQuiescenceDetector,
 		CreatedAt: time.Now().UTC(),
 		Payload: events.QuiescenceDetectorEvent{
@@ -58,9 +58,9 @@ func (w *QuiescenceDetectorWorker) sendQuiescenceDetectorEvent(ctx context.Conte
 		},
 	}:
 	case <-ctx.Done():
-		w.log.Debug("Context done, stopping event send")
+		w.log.Debug("Context done, stopping domainEvent send")
 	default:
 		atomic.AddUint64(&w.droppedEvents, 1)
-		w.log.Warn(fmt.Sprintf("Quiescence event dropped for robot %d, channel full", ID))
+		w.log.Warn(fmt.Sprintf("Quiescence domainEvent dropped for robot %d, channel full", ID))
 	}
 }

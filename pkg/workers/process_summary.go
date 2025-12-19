@@ -19,15 +19,15 @@ import (
 // If the receiver channel is full, the message is dropped to keep the system responsive.
 // Channel capacity can be monitored via metrics if needed.
 type ProcessSummaryWorker struct {
-	Log    *slog.Logger
-	Name   events.WorkerName
-	robot  *robot.Robot
-	Robots []*robot.Robot
-	Event  chan events.Event
+	Log         *slog.Logger
+	Name        events.WorkerName
+	robot       *robot.Robot
+	Robots      []*robot.Robot
+	DomainEvent chan events.Event
 }
 
-func NewProcessSummaryWorker(logger *slog.Logger, robot *robot.Robot, robots []*robot.Robot, event chan events.Event) ProcessSummaryWorker {
-	return ProcessSummaryWorker{Log: logger, robot: robot, Robots: robots, Event: event}
+func NewProcessSummaryWorker(logger *slog.Logger, robot *robot.Robot, robots []*robot.Robot, domainEvent chan events.Event) ProcessSummaryWorker {
+	return ProcessSummaryWorker{Log: logger, robot: robot, Robots: robots, DomainEvent: domainEvent}
 }
 
 func (w ProcessSummaryWorker) WithName(name string) Worker {
@@ -69,7 +69,7 @@ func (w ProcessSummaryWorker) Run(ctx context.Context) error {
 				w.Log.Debug("GossipUpdate channel is full, dropping message")
 			}
 		case <-ctx.Done():
-			w.Log.Debug("Context done, stopping event send")
+			w.Log.Debug("Context done, stopping domainEvent send")
 			return nil
 		}
 	}
@@ -77,14 +77,14 @@ func (w ProcessSummaryWorker) Run(ctx context.Context) error {
 
 func (w ProcessSummaryWorker) sendMessageReceivedEvent(ctx context.Context, receiverID robot.ID) {
 	select {
-	case w.Event <- events.Event{
+	case w.DomainEvent <- events.Event{
 		EventType: events.EventMessageReceived,
 		CreatedAt: time.Now().UTC(),
 		Payload:   events.MessageReceivedEvent{ReceiverID: receiverID},
 	}:
 	case <-ctx.Done():
-		w.Log.Debug("Context done, stopping event send")
+		w.Log.Debug("Context done, stopping domainEvent send")
 	default:
-		w.Log.Debug("Buffer is full")
+		w.Log.Debug(fmt.Sprintf("[%s] Buffer is full", w.Name))
 	}
 }

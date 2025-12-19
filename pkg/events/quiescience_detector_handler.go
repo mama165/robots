@@ -9,15 +9,15 @@ import (
 	"github.com/hako/durafmt"
 )
 
-type QuiescenceDetectorProcessor struct {
+type QuiescenceDetectorHandler struct {
 	log *slog.Logger
 }
 
-func NewQuiescenceDetectorProcessor(log *slog.Logger) *QuiescenceDetectorProcessor {
-	return &QuiescenceDetectorProcessor{log: log}
+func NewQuiescenceDetectorHandler(log *slog.Logger) *QuiescenceDetectorHandler {
+	return &QuiescenceDetectorHandler{log: log}
 }
 
-func (p QuiescenceDetectorProcessor) Handle(event Event) {
+func (p QuiescenceDetectorHandler) Handle(event Event) {
 	switch event.EventType {
 	case EventQuiescenceDetector:
 		payload, ok := event.Payload.(QuiescenceDetectorEvent)

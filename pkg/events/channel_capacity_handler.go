@@ -6,18 +6,18 @@ import (
 	"robots/pkg/errors"
 )
 
-// ChannelCapacityProcessor turns raw channel capacity metrics into warnings.
+// ChannelCapacityHandler turns raw channel capacity metrics into warnings.
 // It logs a warning when the remaining buffer size falls below a defined threshold.
-type ChannelCapacityProcessor struct {
+type ChannelCapacityHandler struct {
 	log                  *slog.Logger
 	LowCapacityThreshold int
 }
 
-func NewChannelCapacityProcessor(log *slog.Logger, LowCapacityThreshold int) *ChannelCapacityProcessor {
-	return &ChannelCapacityProcessor{log: log, LowCapacityThreshold: LowCapacityThreshold}
+func NewChannelCapacityHandler(log *slog.Logger, LowCapacityThreshold int) *ChannelCapacityHandler {
+	return &ChannelCapacityHandler{log: log, LowCapacityThreshold: LowCapacityThreshold}
 }
 
-func (p ChannelCapacityProcessor) Handle(event Event) {
+func (p ChannelCapacityHandler) Handle(event Event) {
 	switch event.EventType {
 	case EventChannelCapacity:
 		payload, ok := event.Payload.(ChannelCapacityEvent)

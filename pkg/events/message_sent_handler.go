@@ -7,17 +7,17 @@ import (
 	"sync"
 )
 
-type MessageSentProcessor struct {
+type MessageSentHandler struct {
 	log     *slog.Logger
 	mu      sync.Mutex
 	counter *Counter
 }
 
-func NewMessageSentProcessor(log *slog.Logger, counter *Counter) *MessageSentProcessor {
-	return &MessageSentProcessor{log: log, counter: counter}
+func NewMessageSentHandler(log *slog.Logger, counter *Counter) *MessageSentHandler {
+	return &MessageSentHandler{log: log, counter: counter}
 }
 
-func (p *MessageSentProcessor) Handle(event Event) {
+func (p *MessageSentHandler) Handle(event Event) {
 	switch event.EventType {
 	case EventMessageSent:
 		payload, ok := event.Payload.(MessageSentEvent)
