@@ -25,6 +25,7 @@ const (
 	EventWorkerRestartedAfterPanic            EventType = "WORKER_RESTARTED_AFTER_PANIC"
 	EventChannelCapacity                      EventType = "CHANNEL_CAPACITY"
 	EventAllConverged                         EventType = "ALL_CONVERGED"
+	EventWinnerElected                        EventType = "WINNER_ELECTED"
 )
 
 type Event struct {
@@ -68,6 +69,10 @@ type ChannelCapacityEvent struct {
 
 type AllConvergedEvent struct {
 	AllConverged bool
+}
+
+type WinnerElectedEvent struct {
+	ID int
 }
 
 type LastActivity time.Time

@@ -37,7 +37,6 @@ func main() {
 	secretManager := robot.SecretManager{Config: config}
 	secret := secretManager.SplitSecret(config.Secret)
 	robots := secretManager.CreateRobots(secret)
-	winner := make(chan *robot.Robot, 1)
 	// ⚠️ Buffer will receive a lot of events
 	// ⚠️ Message can be lost
 	waitGroup := sync.WaitGroup{}
@@ -57,7 +56,7 @@ func main() {
 		supervisor.Add(
 			workers.NewProcessSummaryWorker(log, r, robots, domainEvent).WithName("summary worker"),
 			workers.NewMergeSecretWorker(log, r, domainEvent).WithName("update worker"),
-			workers.NewConvergenceDetectorWorker(config, log, r, winner, once, file).WithName("convergence detector worker"),
+			workers.NewConvergenceDetectorWorker(config, log, r, domainEvent).WithName("convergence detector worker"),
 			workers.NewStartGossipWorker(config, log, r, robots, domainEvent).WithName("start gossip worker"),
 			workers.NewQuiescenceDetectorWorker(config, log, r, domainEvent, 0).WithName("quiescence worker"),
 		)
@@ -77,6 +76,7 @@ func main() {
 			events.NewWorkerRestartedAfterPanicHandler(log, counter),
 			events.NewChannelCapacityHandler(log, config.LowCapacityThreshold),
 			events.NewQuiescenceDetectorHandler(log),
+			events.NewWinnerElectedHandler(config, log, robots, once, file),
 		).WithName("event fanout worker"),
 	)
 	supervisor.Run()

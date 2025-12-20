@@ -2,13 +2,10 @@ package workers
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"log/slog"
 	"robots/internal/conf"
 	"robots/pkg/events"
 	"robots/pkg/robot"
-	"sync"
 	"time"
 )
 
@@ -26,20 +23,15 @@ import (
 // has completed the secret. Using a buffered channel or a sync.Once ensures that the secret
 // is reliably written exactly once.
 type ConvergenceDetectorWorker struct {
-	Config conf.Config
-	Log    *slog.Logger
-	Robot  *robot.Robot
-	Name   events.WorkerName
-	Winner chan *robot.Robot
-	once   *sync.Once
-	writer io.Writer
+	Config      conf.Config
+	Log         *slog.Logger
+	Robot       *robot.Robot
+	Name        events.WorkerName
+	DomainEvent chan events.Event
 }
 
-func NewConvergenceDetectorWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, winner chan *robot.Robot, once *sync.Once, writer io.Writer) ConvergenceDetectorWorker {
-	if writer == nil {
-		panic("ConvergenceDetectorWorker: writer must be injected")
-	}
-	return ConvergenceDetectorWorker{Config: config, Log: log, Robot: robot, Winner: winner, once: once, writer: writer}
+func NewConvergenceDetectorWorker(config conf.Config, log *slog.Logger, robot *robot.Robot, DomainEvent chan events.Event) ConvergenceDetectorWorker {
+	return ConvergenceDetectorWorker{Config: config, Log: log, Robot: robot, DomainEvent: DomainEvent}
 }
 
 func (w ConvergenceDetectorWorker) WithName(name string) Worker {
@@ -59,7 +51,7 @@ func (w ConvergenceDetectorWorker) Run(ctx context.Context) error {
 		case <-ticker.C:
 			elapsed := w.Robot.LastUpdatedAt.Add(w.Config.QuietPeriod).Before(time.Now().UTC())
 			if elapsed && w.Robot.IsSecretCompleted(w.Config.EndOfSecret) {
-				w.tryWriteSecret()
+				w.sendWinnerElectedEvent(ctx, w.Robot.ID)
 			}
 		case <-ctx.Done():
 			w.Log.Debug("Context done, stopping domainEvent send")
@@ -68,42 +60,17 @@ func (w ConvergenceDetectorWorker) Run(ctx context.Context) error {
 	}
 }
 
-// tryWriteSecret Send the robot in the channel
-func (w ConvergenceDetectorWorker) tryWriteSecret() {
-	// Tenter d'écrire le secret exactement une fois
-	w.once.Do(func() {
-		w.writeSecret()
-		// Send winner in channel to notify others
-		select {
-		case w.Winner <- w.Robot:
-		default:
-			// jamais bloquant
-		}
-	})
-	// Notify other robots they lost
+func (w ConvergenceDetectorWorker) sendWinnerElectedEvent(ctx context.Context, id robot.ID) {
 	select {
-	case winner := <-w.Winner:
-		if winner.ID != w.Robot.ID {
-			w.Log.Info(fmt.Sprintf(
-				"Robot %d tried to win but robot %d has already written the secret",
-				w.Robot.ID, winner.ID,
-			))
-		}
-		// ⚠️Winner is sent again in channel for other robots to read it
-		select {
-		case w.Winner <- winner:
-		default:
-		}
+	case w.DomainEvent <- events.Event{
+		EventType: events.EventWinnerElected,
+		CreatedAt: time.Now().UTC(),
+		Payload:   events.WinnerElectedEvent{ID: id.ToInt()},
+	}:
+	case <-ctx.Done():
+		w.Log.Debug("Context done, stopping domainEvent send")
+		return
 	default:
-		// le channel peut être vide si aucun gagnant n'a encore été mis
-		w.Log.Info(fmt.Sprintf("Robot %d tried to win but no winner registered yet", w.Robot.ID))
+		w.Log.Debug("ConvergenceDetector channel is full, dropping message")
 	}
-}
-
-// Send the winner in the channel without blocking any other possible winner
-func (w ConvergenceDetectorWorker) writeSecret() {
-	if _, err := w.writer.Write([]byte(w.Robot.BuildSecret())); err != nil {
-		w.Log.Error("failed to write secret", "err", err)
-	}
-	w.Log.Info(fmt.Sprintf("Robot %d won and saved the message in file -> %s", w.Robot.ID, w.Config.OutputFile))
 }
