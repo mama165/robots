@@ -7,6 +7,9 @@ import (
 	"sync"
 )
 
+// WorkerRestartedAfterPanicHandler handles events when a worker panics and is restarted.
+// It is triggered by the Supervisor when a worker recovers from a panic.
+// Useful for monitoring reliability and resilience of the system.
 type WorkerRestartedAfterPanicHandler struct {
 	log     *slog.Logger
 	mu      sync.Mutex

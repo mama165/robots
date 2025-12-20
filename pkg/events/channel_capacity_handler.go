@@ -6,8 +6,9 @@ import (
 	"robots/pkg/errors"
 )
 
-// ChannelCapacityHandler turns raw channel capacity metrics into warnings.
-// It logs a warning when the remaining buffer size falls below a defined threshold.
+// ChannelCapacityHandler handles events reporting the capacity of channels.
+// It is triggered to monitor the length and max capacity of internal channels.
+// Useful for observability, detecting backpressure, and avoiding message drops.
 type ChannelCapacityHandler struct {
 	log                  *slog.Logger
 	LowCapacityThreshold int

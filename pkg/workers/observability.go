@@ -32,7 +32,7 @@ func (s ObservabilityWorker) GetName() events.WorkerName {
 }
 
 func (s ObservabilityWorker) Run(ctx context.Context) error {
-	ticker := time.NewTicker(s.config.SnapshotInterval)
+	ticker := time.NewTicker(s.config.ObservabilityInterval)
 	defer ticker.Stop()
 	for {
 		select {

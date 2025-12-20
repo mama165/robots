@@ -12,7 +12,12 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// MergeSecretWorker Fetch all missing parts coming from anybody
+// MergeSecretWorker merges incoming secret parts into the local robot state.
+// It is responsible to apply merging rules (deduplication, ordering,
+// versioning) to ensure that secret reconstruction is monotonic and idempotent.
+// This worker mutates local state but does not perform convergence detection
+// or trigger side effects. It operates independently of observability
+// concerns such as UI, logging, or notifications.
 type MergeSecretWorker struct {
 	Log         *slog.Logger
 	Name        events.WorkerName

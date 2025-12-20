@@ -55,11 +55,11 @@ func (s *Supervisor) Add(worker ...Worker) ISupervisor {
 	return s
 }
 
-// Start Imagine une machine à laver (la goroutine superviseur) qui fait tourner des vêtements (les workers).
-// Si un vêtement explose (panic),
-// Tu l’attrapes sans casser la machine (recover)
-// Tu le remets dans la machine (restart Run)
-// Et la machine continue son cycle (la goroutine ne s’arrête pas).
+// Start runs a worker under supervision.
+// The worker is executed in a dedicated goroutine. If its Run method panics,
+// the supervisor recovers, restarts the worker, and keeps the supervision
+// loop alive. A failure in one worker must not stop the supervisor itself.
+// This provides fault isolation and basic self-healing behavior.
 func (s *Supervisor) Start(worker Worker) {
 	s.wg.Add(1)
 

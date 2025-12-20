@@ -7,6 +7,9 @@ import (
 	"sync"
 )
 
+// MessageSentHandler handles events when a message is sent.
+// It is triggered each time a robot sends a message to another robot.
+// Useful for updating observability metrics, logging, or telemetry.
 type MessageSentHandler struct {
 	log     *slog.Logger
 	mu      sync.Mutex

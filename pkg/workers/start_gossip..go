@@ -14,6 +14,15 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// StartGossipWorker initiates gossip rounds by periodically selecting peers
+// and emitting state exchange messages.
+//
+// It is responsible for liveness, not correctness: gossip ensures that
+// information eventually propagates, but does not guarantee ordering,
+// delivery, or convergence.
+//
+// This worker does not apply state mutations directly and does not make
+// convergence decisions. It only drives communication activity.
 type StartGossipWorker struct {
 	Config      conf.Config
 	Log         *slog.Logger

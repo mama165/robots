@@ -7,6 +7,10 @@ import (
 	"sync"
 )
 
+// MessageReceivedHandler handles events when a message is successfully received.
+// It is triggered every time a message arrives at its destination robot.
+// The handler can be used to update observability metrics, logging, or
+// trigger additional business logic without modifying the original message.
 type MessageReceivedHandler struct {
 	log     *slog.Logger
 	mu      sync.Mutex

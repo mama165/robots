@@ -6,6 +6,9 @@ import (
 	"sync"
 )
 
+// MessageReorderedHandler handles events when a message is delivered out of order.
+// It is triggered when messages arrive in a different order than they were sent.
+// Useful for measuring and analyzing protocol behavior under reordering.
 type MessageReorderedHandler struct {
 	log     *slog.Logger
 	mu      sync.Mutex

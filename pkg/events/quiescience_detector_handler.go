@@ -9,6 +9,9 @@ import (
 	"github.com/hako/durafmt"
 )
 
+// QuiescenceDetectorHandler handles events related to robot quiescence.
+// It is triggered periodically to report the last activity timestamp of a robot.
+// Can be used to detect when all robots have reached a stable state.
 type QuiescenceDetectorHandler struct {
 	log *slog.Logger
 }

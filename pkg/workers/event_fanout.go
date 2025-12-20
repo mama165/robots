@@ -6,6 +6,15 @@ import (
 	"robots/pkg/events"
 )
 
+// EventFanout broadcasts domain events to multiple in-process consumers.
+//
+// It provides best-effort fan-out with no guarantees regarding delivery,
+// ordering, durability, or retries. EventFanout is not a message broker.
+//
+// It is intended for observability and side effects (UI, logs, metrics),
+// not for core domain logic.
+//
+// EventFanout is safe for concurrent use by multiple goroutines.
 type EventFanout struct {
 	Log            *slog.Logger
 	Name           events.WorkerName

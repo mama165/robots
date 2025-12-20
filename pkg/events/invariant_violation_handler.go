@@ -7,6 +7,11 @@ import (
 	"sync"
 )
 
+// InvariantViolationHandler handles detected violations of system invariants.
+// It is invoked when a safety or consistency invariant is broken, indicating
+// a bug, data corruption, or unexpected behavior. The handler defines how the
+// system reacts (e.g. logging, metrics, panic, or recovery).
+// It must not attempt to repair state silently or hide invariant violations.
 type InvariantViolationHandler struct {
 	log     *slog.Logger
 	mu      sync.Mutex

@@ -11,6 +11,13 @@ import (
 	"time"
 )
 
+// QuiescenceDetectorWorker observes system activity and detects periods of
+// quiescence (i.e. absence of meaningful state changes).
+// It does not infer correctness or convergence by itself. Quiescence is used
+// as a temporal signal to support higher-level decisions such as convergence
+// completion or termination.
+// Quiescence detection is heuristic and may trigger multiple times; consumers
+// must treat its signals as advisory and idempotent.
 type QuiescenceDetectorWorker struct {
 	Config        conf.Config
 	Name          events.WorkerName
